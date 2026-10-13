@@ -11,6 +11,7 @@
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Drizzle-4169E1?logo=postgresql&logoColor=white)
 ![MCP](https://img.shields.io/badge/MCP-ready-000000)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Views](https://hits.sh/github.com/MinAnnie/task-tracker-public.svg?label=views&color=6f42c1)](https://hits.sh/github.com/MinAnnie/task-tracker-public/)
 
 [Features](#-features) · [How it works](#-how-it-works) · [Quick start](#-quick-start) · [Deploy](#-deploy) · [Docs](#-documentation)
 
