@@ -1,0 +1,95 @@
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.card:hover {
+  border-color: var(--color-accent-soft);
+}
+
+.key {
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.title {
+  font-size: 14px;
+  line-height: 1.4;
+  font-weight: 500;
+  color: var(--color-ink);
+  text-decoration: none;
+}
+
+.title:hover {
+  color: var(--color-accent-hover);
+  text-decoration: underline;
+}
+
+.waiting {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-warning-fg);
+  background: var(--color-warning-bg);
+  border-radius: var(--radius-pill);
+  padding: 2px 10px;
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.facts {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  min-width: 0;
+}
+
+.stage {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.badges {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pr {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--chip-in-review-fg);
+  background: var(--chip-in-review-bg);
+  border-radius: var(--radius-pill);
+  padding: 2px 8px;
+}
+
+@media (max-width: 640px) {
+  .card {
+    padding: 14px;
+    border-radius: var(--radius-lg);
+  }
+
+  .title {
+    font-size: 15px;
+    /* The whole title line is the tap target. */
+    min-height: var(--touch-target);
+    display: flex;
+    align-items: center;
+  }
+}

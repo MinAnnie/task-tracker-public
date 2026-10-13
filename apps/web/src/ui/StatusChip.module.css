@@ -1,0 +1,40 @@
+.chip {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: var(--radius-pill);
+  padding: 2px 10px;
+  white-space: nowrap;
+}
+
+.todo,
+.pr_closed {
+  background: var(--chip-todo-bg);
+  color: var(--chip-todo-fg);
+}
+
+.in_progress {
+  background: var(--chip-in-progress-bg);
+  color: var(--chip-in-progress-fg);
+}
+
+.in_review,
+.pr_open {
+  background: var(--chip-in-review-bg);
+  color: var(--chip-in-review-fg);
+}
+
+.done {
+  background: var(--chip-done-bg);
+  color: var(--chip-done-fg);
+}
+
+.blocked {
+  background: var(--chip-blocked-bg);
+  color: var(--chip-blocked-fg);
+}
+
+.pr_merged {
+  background: var(--chip-merged-bg);
+  color: var(--chip-merged-fg);
+}

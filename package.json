@@ -1,0 +1,17 @@
+{
+  "name": "task-tracker",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.8.1",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --recursive run dev",
+    "build": "pnpm --recursive run build",
+    "test": "pnpm --recursive run test",
+    "test:integration": "pnpm --filter @task-tracker/server run test:integration",
+    "typecheck": "pnpm --recursive run typecheck",
+    "db:generate": "pnpm --filter @task-tracker/server run db:generate"
+  }
+}

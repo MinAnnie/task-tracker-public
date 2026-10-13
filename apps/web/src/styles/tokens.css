@@ -1,0 +1,140 @@
+/* Design tokens and base styles. Every color, font and radius used by the app lives here. */
+:root {
+  --font-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
+
+  --color-ground: #f6f6f3;
+  --color-surface: #ffffff;
+  --color-surface-muted: #fafaf8;
+  --color-column: #efefea;
+  --color-hover: #edede8;
+  --color-ink: #1a1a18;
+  --color-ink-soft: #2e2e2b;
+  --color-ink-subtle: #45453f;
+  --color-muted: #5c5c57;
+  --color-line: #e2e2dc;
+  --color-control-line: #d4d4cc;
+  --color-accent: #1e54c8;
+  --color-accent-hover: #163f96;
+  --color-accent-soft: #b9c8ec;
+  --color-on-accent: #ffffff;
+  --color-backdrop: rgba(26, 26, 24, 0.45);
+
+  --color-danger: #b4231a;
+  --color-danger-ink: #9b1c14;
+  --color-danger-bg: #fbe3e1;
+  --color-danger-line: #e8b9b4;
+  --color-danger-fg: #7e170f;
+  --color-warning-bg: #fcefd6;
+  --color-warning-fg: #5c3700;
+  --color-success-bg: #ddf3ea;
+  --color-success-fg: #0f5e43;
+  --color-selected: #e3ecfc;
+  --color-disabled-bg: #f1f1ec;
+  --color-disabled-line: #b5b5ad;
+  --color-disabled-fg: #6b6b64;
+
+  /* Avatars */
+  --color-avatar-bg: #dce3f2;
+  --color-avatar-fg: #1e3e86;
+  --color-avatar-other-bg: #e6e6df;
+
+  /* Status: column dots and chips (always paired with a text label). */
+  --status-todo: #8a8a82;
+  --status-in-progress: #b7791f;
+  --status-in-review: #1e54c8;
+  --status-done: #1f7a55;
+  --status-blocked: #b4231a;
+  --chip-todo-bg: #edede8;
+  --chip-todo-fg: #45453f;
+  --chip-in-progress-bg: #fcefd6;
+  --chip-in-progress-fg: #5c3700;
+  --chip-in-review-bg: #e3ecfc;
+  --chip-in-review-fg: #1e4bb0;
+  --chip-done-bg: #ddf3ea;
+  --chip-done-fg: #0f5e43;
+  --chip-blocked-bg: #fbe3e1;
+  --chip-blocked-fg: #7e170f;
+  --chip-merged-bg: #ece6fa;
+  --chip-merged-fg: #4b2a9a;
+
+  /* Priority: bar icon colors (always paired with a text label). */
+  --priority-urgent: #b4231a;
+  --priority-high: #b45309;
+  --priority-medium: #1e54c8;
+  --priority-low: #5c5c57;
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --radius-pill: 999px;
+  --shadow-dialog: 0 12px 40px rgba(0, 0, 0, 0.18);
+  --shadow-fab: 0 6px 20px rgba(30, 84, 200, 0.35);
+  --focus-ring: 2px solid var(--color-accent);
+
+  /* Minimum touch target on phones. */
+  --touch-target: 44px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--color-ground);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-text-size-adjust: 100%;
+}
+
+a {
+  color: var(--color-accent);
+}
+
+a:hover {
+  color: var(--color-accent-hover);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-weight: 500;
+}
+
+/* Phones: inputs at 16px avoid iOS zoom-on-focus. */
+@media (max-width: 640px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}

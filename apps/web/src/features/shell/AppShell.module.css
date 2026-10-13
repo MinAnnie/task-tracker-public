@@ -1,0 +1,286 @@
+.shell {
+  min-height: 100vh;
+  background: var(--color-ground);
+}
+
+.header {
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-line);
+  position: relative;
+  z-index: 10;
+}
+
+.bar {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 10px 24px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+}
+
+.brand {
+  font-weight: 600;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.menuToggle {
+  display: none;
+}
+
+.switcher {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--color-muted);
+}
+
+.switcher select {
+  color: var(--color-ink);
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--color-control-line);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+}
+
+.nav {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+  align-items: center;
+}
+
+.navLink {
+  text-decoration: none;
+  color: var(--color-muted);
+  font-size: 14px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+}
+
+.navLink:hover {
+  background: var(--color-hover);
+  color: var(--color-ink);
+}
+
+.active {
+  color: var(--color-ink);
+  font-weight: 500;
+  background: var(--color-hover);
+}
+
+.account {
+  position: relative;
+}
+
+.avatarButton {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.accountPanel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  min-width: 220px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-dialog);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.accountName {
+  margin: 0;
+  padding: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.accountName :global(.mono) {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-muted);
+}
+
+.signOut {
+  text-align: left;
+  min-height: 40px;
+  padding: 0 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.signOut:hover {
+  background: var(--color-hover);
+}
+
+/* "Connect Discord" is a link styled like the menu's buttons. */
+a.signOut {
+  display: flex;
+  align-items: center;
+  color: inherit;
+  text-decoration: none;
+}
+
+.main {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+/* Phones: menu button, centered project switcher, account; nav drops down. */
+@media (max-width: 640px) {
+  .bar {
+    padding: 4px 16px;
+    gap: 4px;
+    flex-wrap: nowrap;
+  }
+
+  .menuToggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--touch-target);
+    height: var(--touch-target);
+    margin-left: -10px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .brand {
+    flex: 1;
+  }
+
+  /* With a switcher, it replaces the brand in the middle of the bar. */
+  .switcher {
+    flex: 1;
+    justify-content: center;
+    min-width: 0;
+  }
+
+  .brand:has(+ .switcher) {
+    display: none;
+  }
+
+  .switcherLabel {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .switcher select {
+    min-height: var(--touch-target);
+    max-width: 100%;
+    border: none;
+    background: transparent;
+    font-weight: 600;
+    text-align: center;
+  }
+
+  .nav {
+    display: none;
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    background: var(--color-surface);
+    border-bottom: 1px solid var(--color-line);
+    padding: 8px 16px;
+    margin: 0;
+  }
+
+  .nav[data-open="true"] {
+    display: flex;
+  }
+
+  .navLink {
+    min-height: var(--touch-target);
+    display: flex;
+    align-items: center;
+  }
+
+  .avatarButton {
+    width: var(--touch-target);
+    height: var(--touch-target);
+  }
+
+  .signOut {
+    min-height: var(--touch-target);
+  }
+
+  .main {
+    padding: 16px;
+  }
+}
+
+.discordAccount {
+  margin: 0;
+  padding: 4px 8px;
+  font-size: 13px;
+  color: var(--color-muted);
+  overflow-wrap: anywhere;
+}
+
+.notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--color-success-bg);
+  color: var(--color-success-fg);
+  font-size: 14px;
+}
+
+.notice p {
+  margin: 0;
+}
+
+.noticeError {
+  background: var(--color-danger-bg);
+  color: var(--color-danger-fg);
+}
+
+.dismiss {
+  flex-shrink: 0;
+  min-height: 32px;
+  padding: 0 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  text-decoration: underline;
+  cursor: pointer;
+}

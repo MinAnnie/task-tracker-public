@@ -1,0 +1,30 @@
+.avatar {
+  flex: none;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+}
+
+.sm {
+  width: 24px;
+  height: 24px;
+  font-size: 11px;
+}
+
+.md {
+  width: 28px;
+  height: 28px;
+  font-size: 12px;
+}
+
+.self {
+  background: var(--color-avatar-bg);
+  color: var(--color-avatar-fg);
+}
+
+.other {
+  background: var(--color-avatar-other-bg);
+  color: var(--color-ink-subtle);
+}

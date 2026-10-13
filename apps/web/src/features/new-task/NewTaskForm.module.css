@@ -1,0 +1,259 @@
+.form {
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--color-line);
+}
+
+.heading {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.context {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--color-muted);
+}
+
+.key {
+  color: var(--color-ink);
+}
+
+.close {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-muted);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.close:hover {
+  background: var(--color-hover);
+}
+
+.fields {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.optional {
+  font-weight: 400;
+  color: var(--color-muted);
+}
+
+.input,
+.textarea {
+  font-weight: 400;
+  font-size: 14px;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--color-control-line);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+}
+
+.titleInput {
+  font-size: 15px;
+  min-height: 44px;
+  padding: 0 12px;
+}
+
+.input[aria-invalid="true"] {
+  border: 2px solid var(--color-danger);
+}
+
+.textarea {
+  padding: 10px;
+  resize: vertical;
+}
+
+.error {
+  font-weight: 400;
+  font-size: 13px;
+  color: var(--color-danger-ink);
+}
+
+.created {
+  margin: 0;
+  font-size: 13px;
+  color: var(--chip-done-fg);
+  background: var(--chip-done-bg);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+}
+
+.fieldset {
+  border: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.legend {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 0;
+  margin-bottom: 8px;
+}
+
+.priorities {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px;
+}
+
+.priority {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid var(--color-control-line);
+  background: var(--color-surface);
+  color: var(--color-ink-subtle);
+}
+
+.priority:focus-within {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* The checked choice gets a thicker border in its own color (plus the text label). */
+.priority[data-checked="true"] {
+  border-width: 2px;
+  color: var(--color-ink);
+}
+
+.priority[data-checked="true"][data-priority="urgent"] { border-color: var(--priority-urgent); }
+.priority[data-checked="true"][data-priority="high"] { border-color: var(--priority-high); }
+.priority[data-checked="true"][data-priority="medium"] { border-color: var(--priority-medium); }
+.priority[data-checked="true"][data-priority="low"] { border-color: var(--priority-low); }
+
+.hint {
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--color-line);
+  background: var(--color-surface-muted);
+  border-radius: 0 0 var(--radius-xl) var(--radius-xl);
+}
+
+.another {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--color-ink-subtle);
+  min-height: 40px;
+}
+
+.another input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+}
+
+.buttons {
+  display: flex;
+  gap: 8px;
+}
+
+/* Phones: full-screen sheet; actions stay reachable at the bottom. */
+@media (max-width: 640px) {
+  .header {
+    padding: 8px 8px 8px 16px;
+  }
+
+  .heading {
+    font-size: 16px;
+  }
+
+  .close {
+    width: var(--touch-target);
+    height: var(--touch-target);
+  }
+
+  .fields {
+    flex: 1;
+    padding: 16px;
+  }
+
+  .input,
+  .titleInput {
+    min-height: 48px;
+    padding: 0 12px;
+  }
+
+  .priorities {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .priority {
+    min-height: 48px;
+    font-size: 15px;
+  }
+
+  .footer {
+    position: sticky;
+    bottom: 0;
+    border-radius: 0;
+    padding: 12px 16px;
+  }
+
+  .another {
+    min-height: var(--touch-target);
+  }
+
+  .buttons {
+    flex: 1 1 100%;
+  }
+
+  .buttons > * {
+    flex: 1;
+  }
+}

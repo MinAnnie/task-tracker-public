@@ -1,0 +1,9 @@
+# Local-only override that publishes ports on loopback for testing:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+services:
+  app:
+    ports:
+      - "127.0.0.1:${APP_HOST_PORT:-3000}:${PORT:-3000}"
+  db:
+    ports:
+      - "127.0.0.1:${DB_HOST_PORT:-5432}:5432"

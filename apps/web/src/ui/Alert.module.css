@@ -1,0 +1,35 @@
+.alert {
+  display: flex;
+  gap: 12px;
+  border-radius: var(--radius-md);
+  padding: 14px;
+}
+
+.alert > svg {
+  flex: none;
+}
+
+.error {
+  background: var(--color-danger-bg);
+  color: var(--color-danger-fg);
+}
+
+.warning {
+  background: var(--color-warning-bg);
+  color: var(--color-warning-fg);
+}
+
+.warning a {
+  color: inherit;
+  font-weight: 600;
+}
+
+.body {
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.title {
+  display: block;
+  font-weight: 600;
+}

@@ -1,0 +1,2 @@
+ALTER TABLE "projects" ALTER COLUMN "task_key_prefix" SET NOT NULL;--> statement-breakpoint
+ALTER TABLE "projects" ADD CONSTRAINT "projects_task_key_prefix_format" CHECK ("projects"."task_key_prefix" ~ '^[A-Z][A-Z0-9]{0,9}$');

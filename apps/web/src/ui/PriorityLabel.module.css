@@ -1,0 +1,11 @@
+.priority {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-ink-subtle);
+}
+
+.urgent {
+  color: var(--color-danger-ink);
+  font-weight: 600;
+}
