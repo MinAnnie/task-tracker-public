@@ -30,7 +30,7 @@
 | 💬 **Discord notifications** | Each project posts to its own channel: new tasks, takes, assignments, PRs and unblocked tasks. |
 | 🪪 **Discord account linking** | Connect your Discord account from the account menu (OAuth, `identify` scope only). Linked users get a real `@mention` when a task is assigned to them, and can use the bot. |
 | ⌨️ **Slash commands** | `/tasks`, `/mine`, `/task`, `/take` and `/release` right from the project's channel, with key autocomplete and private replies. |
-| 📥 **Bulk import** | Load a whole backlog, with dependencies, from one JSON file. Validated first, written in a single transaction. |
+| 📥 **Bulk import CLI** | Load a whole backlog, with dependencies, from one JSON file with the `import-tasks` command (there is no import screen in the web app). Supports `--dry-run`; everything is validated first and written in a single transaction. |
 | 🔎 **Board filters** | Search by text and filter by availability (ready or blocked), priority, stage and assignee; the filters live in the URL, so you can share them. |
 | 🤖 **Copy for AI** | Every task can be copied as a ready-made Markdown brief for your coding assistant. |
 | 🧠 **MCP server** | Project-scoped, read-only API tokens plus an MCP server, so an agent can ask "what should I work on next?". |
@@ -141,7 +141,7 @@ The server follows a ports-and-adapters design: use cases in `src/application/` 
 
 - [HTTP API](docs/api.md): roles, admin, projects and tasks endpoints, the GitHub webhook and API tokens
 - [Discord](docs/discord.md): notifications, account linking and slash commands
-- [Bulk import](docs/import.md): the JSON format and the `import-tasks` CLI
+- [Bulk import CLI](docs/import.md): the JSON format and how to run `import-tasks` locally or in production
 - [MCP server](apps/mcp/README.md): build, configuration and Claude Code registration
 
 ## 📄 License

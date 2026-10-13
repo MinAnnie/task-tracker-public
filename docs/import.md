@@ -1,6 +1,6 @@
 # Bulk task import
 
-`import-tasks` creates many tasks (and their dependencies) in a project from a JSON file:
+`import-tasks` is a command-line tool that runs next to the server (locally, or inside the app container in production); the web app has no import screen. It creates many tasks (and their dependencies) in a project from a JSON file:
 
 ```json
 { "tasks": [
