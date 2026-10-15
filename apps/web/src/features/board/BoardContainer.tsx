@@ -8,7 +8,7 @@ import { paths } from "../../lib/paths.ts";
 import { Alert } from "../../ui/Alert.tsx";
 import { StatusMessage } from "../../ui/StatusMessage.tsx";
 import { isProjectUnavailable, ProjectUnavailable } from "../projects/ProjectUnavailable.tsx";
-import { filterTasks, groupByStatus, NO_FILTERS, stageOptions } from "./board-model.ts";
+import { clearFilters, filterTasks, groupByStatus, stageOptions } from "./board-model.ts";
 import { BoardView } from "./BoardView.tsx";
 import { useBoardFilters } from "./use-board-filters.ts";
 
@@ -27,7 +27,7 @@ export function BoardContainer() {
   const [selectedStatus, setSelectedStatus] = useState<TaskStatus>("todo");
 
   const tasks = board.data;
-  const columns = useMemo(() => groupByStatus(filterTasks(tasks ?? [], filters, me)), [tasks, filters, me]);
+  const columns = useMemo(() => groupByStatus(filterTasks(tasks ?? [], filters, me), filters.sort), [tasks, filters, me]);
   const stages = useMemo(() => stageOptions(tasks ?? [], filters.stages), [tasks, filters.stages]);
 
   useEffect(() => {
@@ -55,7 +55,7 @@ export function BoardContainer() {
         me={me}
         filters={filters}
         onFiltersChange={setFilters}
-        onClearFilters={() => setFilters(NO_FILTERS)}
+        onClearFilters={() => setFilters(clearFilters(filters))}
         stages={stages}
         totalCount={tasks?.length ?? 0}
         selectedStatus={selectedStatus}

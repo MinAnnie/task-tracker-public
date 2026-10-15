@@ -9,11 +9,13 @@ export interface BoardColumn {
 
 export type Availability = "any" | "ready" | "blocked";
 export type AssigneeFilter = "all" | "mine" | "unassigned";
+/** Order of the tasks in each column; ties fall back to priority, then key number. */
+export type BoardSort = "priority" | "newest" | "oldest" | "updated";
 
 /** The stage filter value that stands for tasks without a stage. */
 export const NO_STAGE = "";
 
-/** What the board shows; every field narrows it further (AND). */
+/** What the board shows (every filter narrows it further, AND) and in which order. */
 export interface BoardFilters {
   /** Free text matched against the key and the title. */
   query: string;
@@ -24,14 +26,31 @@ export interface BoardFilters {
   /** Any of these stages ({@link NO_STAGE} for none); empty means any stage. */
   stages: string[];
   assignee: AssigneeFilter;
+  /** Not a filter: it narrows nothing, so it is not counted and survives clearing. */
+  sort: BoardSort;
 }
 
-export const NO_FILTERS: BoardFilters = { query: "", availability: "any", priorities: [], stages: [], assignee: "all" };
+export const NO_FILTERS: BoardFilters = {
+  query: "",
+  availability: "any",
+  priorities: [],
+  stages: [],
+  assignee: "all",
+  sort: "priority",
+};
 
 const AVAILABILITIES: readonly Availability[] = ["any", "ready", "blocked"];
 const ASSIGNEES: readonly AssigneeFilter[] = ["all", "mine", "unassigned"];
+const SORTS: readonly BoardSort[] = ["priority", "newest", "oldest", "updated"];
 /** Query string parameters the filters own. */
-const PARAMS = { query: "q", availability: "availability", priority: "priority", stage: "stage", assignee: "assignee" };
+const PARAMS = {
+  query: "q",
+  availability: "availability",
+  priority: "priority",
+  stage: "stage",
+  assignee: "assignee",
+  sort: "sort",
+};
 
 const oneOf = <T extends string>(allowed: readonly T[], value: string | null, fallback: T): T =>
   allowed.includes(value as T) ? (value as T) : fallback;
@@ -45,6 +64,7 @@ export function parseBoardFilters(params: URLSearchParams): BoardFilters {
     priorities: TASK_PRIORITIES.filter((priority) => priorities.has(priority)),
     stages: [...new Set(params.getAll(PARAMS.stage))],
     assignee: oneOf(ASSIGNEES, params.get(PARAMS.assignee), "all"),
+    sort: oneOf(SORTS, params.get(PARAMS.sort), "priority"),
   };
 }
 
@@ -57,6 +77,7 @@ export function writeBoardFilters(filters: BoardFilters, base = new URLSearchPar
   for (const priority of filters.priorities) params.append(PARAMS.priority, priority);
   for (const stage of filters.stages) params.append(PARAMS.stage, stage);
   if (filters.assignee !== "all") params.set(PARAMS.assignee, filters.assignee);
+  if (filters.sort !== "priority") params.set(PARAMS.sort, filters.sort);
   return params;
 }
 
@@ -72,6 +93,9 @@ export function activeFilterCount(filters: BoardFilters): number {
 
 export const hasActiveFilters = (filters: BoardFilters) =>
   filters.query.trim() !== "" || activeFilterCount(filters) > 0;
+
+/** No filter at all, keeping the chosen sort. */
+export const clearFilters = (filters: BoardFilters): BoardFilters => ({ ...NO_FILTERS, sort: filters.sort });
 
 /**
  * The stages to offer: those of the tasks plus any already selected, sorted
@@ -93,12 +117,21 @@ export function stageOptions(
 export const compareBoardTasks = (a: BoardTask, b: BoardTask) =>
   comparePriority(a.priority, b.priority) || compareTaskKeys(a.key, b.key);
 
-/** One column per status, in board order, each sorted by priority then key number. */
-export function groupByStatus(tasks: readonly BoardTask[]): BoardColumn[] {
+const time = (iso: string) => Date.parse(iso);
+
+const SORT_COMPARATORS: Record<BoardSort, (a: BoardTask, b: BoardTask) => number> = {
+  priority: compareBoardTasks,
+  newest: (a, b) => time(b.createdAt) - time(a.createdAt) || compareBoardTasks(a, b),
+  oldest: (a, b) => time(a.createdAt) - time(b.createdAt) || compareBoardTasks(a, b),
+  updated: (a, b) => time(b.updatedAt) - time(a.updatedAt) || compareBoardTasks(a, b),
+};
+
+/** One column per status, in board order, each sorted by `sort` (priority then key number by default). */
+export function groupByStatus(tasks: readonly BoardTask[], sort: BoardSort = "priority"): BoardColumn[] {
   return TASK_STATUSES.map((status) => ({
     status,
     label: STATUS_LABELS[status],
-    tasks: tasks.filter((task) => task.status === status).sort(compareBoardTasks),
+    tasks: tasks.filter((task) => task.status === status).sort(SORT_COMPARATORS[sort]),
   }));
 }
 

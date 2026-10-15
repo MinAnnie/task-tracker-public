@@ -2,7 +2,7 @@ import { useId, useState } from "react";
 import buttons from "../../ui/Button.module.css";
 import { Dialog } from "../../ui/Dialog.tsx";
 import { CloseIcon, SearchIcon } from "../../ui/icons.tsx";
-import { activeFilterCount, hasActiveFilters, NO_FILTERS, type BoardFilters } from "./board-model.ts";
+import { activeFilterCount, clearFilters, hasActiveFilters, type BoardFilters } from "./board-model.ts";
 import { FilterFields, type StageOption } from "./BoardFilterFields.tsx";
 import styles from "./BoardFilters.module.css";
 
@@ -16,14 +16,14 @@ interface BoardToolbarProps {
 }
 
 /**
- * Search plus filters. Desktop shows the filters in a wrapping row; phones keep the
+ * Search plus filters and the sort. Desktop shows the filters in a wrapping row; phones keep the
  * search and move the filters into a sheet behind "Filters (n)".
  */
 export function BoardToolbar({ filters, stages, onFiltersChange, shownCount }: BoardToolbarProps) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const titleId = useId();
   const count = activeFilterCount(filters);
-  const clear = () => onFiltersChange(NO_FILTERS);
+  const clear = () => onFiltersChange(clearFilters(filters));
 
   return (
     <div role="search" aria-label="Filter tasks" className={styles.toolbar}>

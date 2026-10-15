@@ -124,6 +124,47 @@
   outline-offset: -3px;
 }
 
+/* Native select (sort, assignee): same box as the dropdown summaries. */
+.selectField {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.selectLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-muted);
+}
+
+.select,
+.sheetSelect {
+  min-height: 40px;
+  max-width: 220px;
+  padding: 0 8px;
+  border: 1px solid var(--color-control-line);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.sheetSelect {
+  display: block;
+  width: 100%;
+  max-width: none;
+  min-height: var(--touch-target);
+  font-size: 16px;
+}
+
+.select:focus-visible,
+.sheetSelect:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+
 /* Dropdown (details/summary) holding a checkbox list. */
 .popover {
   position: relative;
@@ -343,4 +384,9 @@
   .row {
     display: none;
   }
+}
+
+/* A select's label in the sheet: the legend look on its own line. */
+.list > span.legend {
+  display: block;
 }

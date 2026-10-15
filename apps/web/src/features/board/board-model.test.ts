@@ -3,6 +3,7 @@ import type { BoardTask } from "../../api/types.ts";
 import { boardTask } from "../../test/fixtures.ts";
 import {
   activeFilterCount,
+  clearFilters,
   compareBoardTasks,
   filterTasks,
   groupByStatus,
@@ -14,6 +15,7 @@ import {
   waitingOn,
   writeBoardFilters,
   type BoardFilters,
+  type BoardSort,
 } from "./board-model.ts";
 
 const keys = (tasks: readonly BoardTask[]) => tasks.map((t) => t.key);
@@ -44,6 +46,55 @@ describe("groupByStatus", () => {
     expect(keys(columns[0]!.tasks)).toEqual(["RF-1", "RF-2"]);
     expect(columns[1]!.tasks).toEqual([]);
     expect(keys(columns[3]!.tasks)).toEqual(["RF-3"]);
+  });
+});
+
+describe("groupByStatus with a sort", () => {
+  const tasks = [
+    boardTask({
+      key: "RF-1",
+      priority: "urgent",
+      createdAt: "2026-10-01T10:00:00.000Z",
+      updatedAt: "2026-10-03T10:00:00.000Z",
+    }),
+    boardTask({
+      key: "RF-2",
+      priority: "low",
+      createdAt: "2026-10-05T10:00:00.000Z",
+      updatedAt: "2026-10-05T10:00:00.000Z",
+    }),
+    boardTask({
+      key: "RF-3",
+      priority: "high",
+      createdAt: "2026-10-03T10:00:00.000Z",
+      updatedAt: "2026-10-09T10:00:00.000Z",
+    }),
+    boardTask({
+      key: "RF-4",
+      priority: "medium",
+      createdAt: "2026-10-03T10:00:00.000Z",
+      updatedAt: "2026-10-03T10:00:00.000Z",
+    }),
+    boardTask({ key: "RF-5", status: "done", createdAt: "2026-10-09T10:00:00.000Z" }),
+  ];
+  const todo = (sort: BoardSort) => keys(groupByStatus(tasks, sort)[0]!.tasks);
+
+  it("sorts by priority by default", () => {
+    expect(keys(groupByStatus(tasks)[0]!.tasks)).toEqual(["RF-1", "RF-3", "RF-4", "RF-2"]);
+    expect(todo("priority")).toEqual(["RF-1", "RF-3", "RF-4", "RF-2"]);
+  });
+
+  it("sorts by creation, newest or oldest first, breaking ties by priority then key", () => {
+    expect(todo("newest")).toEqual(["RF-2", "RF-3", "RF-4", "RF-1"]);
+    expect(todo("oldest")).toEqual(["RF-1", "RF-3", "RF-4", "RF-2"]);
+  });
+
+  it("sorts by the most recently updated first", () => {
+    expect(todo("updated")).toEqual(["RF-3", "RF-2", "RF-1", "RF-4"]);
+  });
+
+  it("sorts within every column", () => {
+    expect(keys(groupByStatus(tasks, "newest")[3]!.tasks)).toEqual(["RF-5"]);
   });
 });
 
@@ -112,8 +163,13 @@ describe("filterTasks", () => {
 });
 
 describe("parseBoardFilters / writeBoardFilters", () => {
-  it("reads nothing as no filters", () => {
+  it("reads nothing as no filters, sorted by priority", () => {
     expect(parseBoardFilters(new URLSearchParams())).toEqual(NO_FILTERS);
+    expect(NO_FILTERS.sort).toBe("priority");
+  });
+
+  it.each(["priority", "newest", "oldest", "updated"] as const)("reads the %s sort", (sort) => {
+    expect(parseBoardFilters(new URLSearchParams(`sort=${sort}`)).sort).toBe(sort);
   });
 
   it("round-trips every filter through the query string", () => {
@@ -123,23 +179,27 @@ describe("parseBoardFilters / writeBoardFilters", () => {
       priorities: ["urgent", "low"],
       stages: ["Etapa 1 · Auth", NO_STAGE],
       assignee: "mine",
+      sort: "newest",
     };
     const params = writeBoardFilters(filters);
     expect(params.toString()).toBe(
-      "q=login&availability=ready&priority=urgent&priority=low&stage=Etapa+1+%C2%B7+Auth&stage=&assignee=mine",
+      "q=login&availability=ready&priority=urgent&priority=low&stage=Etapa+1+%C2%B7+Auth&stage=&assignee=mine&sort=newest",
     );
     expect(parseBoardFilters(params)).toEqual(filters);
   });
 
   it("leaves defaults out of the URL and keeps unrelated parameters", () => {
-    const params = writeBoardFilters({ ...NO_FILTERS, query: "  " }, new URLSearchParams("other=1&q=old&priority=low"));
+    const params = writeBoardFilters(
+      { ...NO_FILTERS, query: "  ", sort: "priority" },
+      new URLSearchParams("other=1&q=old&priority=low&sort=newest"),
+    );
     expect(params.toString()).toBe("other=1");
   });
 
   it("ignores unknown values, deduplicates and orders priorities by rank", () => {
     const parsed = parseBoardFilters(
       new URLSearchParams(
-        "availability=soon&assignee=everyone&priority=low&priority=bogus&priority=urgent&priority=low&stage=A&stage=A",
+        "availability=soon&assignee=everyone&sort=random&priority=low&priority=bogus&priority=urgent&priority=low&stage=A&stage=A",
       ),
     );
     expect(parsed).toEqual({ ...NO_FILTERS, priorities: ["urgent", "low"], stages: ["A"] });
@@ -157,8 +217,26 @@ describe("activeFilterCount / hasActiveFilters", () => {
         priorities: ["low", "high"],
         stages: ["A"],
         assignee: "mine",
+        sort: "newest",
       }),
     ).toBe(4);
+  });
+
+  it("does not count the sort, which narrows nothing", () => {
+    expect(activeFilterCount({ ...NO_FILTERS, sort: "updated" })).toBe(0);
+    expect(hasActiveFilters({ ...NO_FILTERS, sort: "updated" })).toBe(false);
+  });
+
+  it("clears every filter but keeps the sort", () => {
+    const filters: BoardFilters = {
+      query: "x",
+      availability: "blocked",
+      priorities: ["low"],
+      stages: ["A"],
+      assignee: "mine",
+      sort: "oldest",
+    };
+    expect(clearFilters(filters)).toEqual({ ...NO_FILTERS, sort: "oldest" });
   });
 
   it("treats a search as an active filter too", () => {

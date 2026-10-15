@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import { TASK_PRIORITIES, type TaskPriority } from "../../api/types.ts";
 import { PRIORITY_LABELS } from "../../lib/task-labels.ts";
-import type { AssigneeFilter, Availability, BoardFilters } from "./board-model.ts";
+import type { AssigneeFilter, Availability, BoardFilters, BoardSort } from "./board-model.ts";
 import styles from "./BoardFilters.module.css";
 
 export interface StageOption {
@@ -29,10 +29,17 @@ const ASSIGNEE_OPTIONS: { value: AssigneeFilter; label: string }[] = [
   { value: "unassigned", label: "Unassigned" },
 ];
 
+const SORT_OPTIONS: { value: BoardSort; label: string }[] = [
+  { value: "priority", label: "Priority" },
+  { value: "newest", label: "Newest first" },
+  { value: "oldest", label: "Oldest first" },
+  { value: "updated", label: "Recently updated" },
+];
+
 const toggle = <T,>(list: readonly T[], value: T) =>
   list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
 
-/** Availability, assignee, priority and stage controls; every change reports the whole filter set. */
+/** Availability, assignee, priority and stage filters plus the sort; every change reports the whole set. */
 export function FilterFields({ filters, stages, onChange, layout }: FilterFieldsProps) {
   const id = useId();
   const set = (changes: Partial<BoardFilters>) => onChange({ ...filters, ...changes });
@@ -83,6 +90,16 @@ export function FilterFields({ filters, stages, onChange, layout }: FilterFields
     />
   );
 
+  const sort = (
+    <SelectField
+      label="Sort"
+      options={SORT_OPTIONS}
+      value={filters.sort}
+      onChange={(value) => set({ sort: value })}
+      layout={layout}
+    />
+  );
+
   if (layout === "sheet") {
     return (
       <div className={styles.sheetFields}>
@@ -90,6 +107,7 @@ export function FilterFields({ filters, stages, onChange, layout }: FilterFields
         {assignee}
         {priority}
         {stage}
+        {sort}
       </div>
     );
   }
@@ -103,7 +121,36 @@ export function FilterFields({ filters, stages, onChange, layout }: FilterFields
       <Popover label="Stage" count={filters.stages.length}>
         {stage}
       </Popover>
+      {sort}
     </>
+  );
+}
+
+interface SelectFieldProps<T extends string> {
+  label: string;
+  options: { value: T; label: string }[];
+  value: T;
+  onChange: (value: T) => void;
+  layout: FilterFieldsProps["layout"];
+}
+
+/** A labelled native select, for choices with many options (or that are not filters). */
+function SelectField<T extends string>({ label, options, value, onChange, layout }: SelectFieldProps<T>) {
+  return (
+    <label className={layout === "sheet" ? styles.list : styles.selectField}>
+      <span className={layout === "sheet" ? styles.legend : styles.selectLabel}>{label}</span>
+      <select
+        className={layout === "sheet" ? styles.sheetSelect : styles.select}
+        value={value}
+        onChange={(event) => onChange(event.target.value as T)}
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 
