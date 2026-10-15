@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Outlet, useLocation, useNavigate, useParams } from "react-router";
-import { useBoard, useCurrentUser, useProjects, useTakeTask } from "../../api/queries.ts";
+import { useBoard, useCurrentUser, useParticipants, useProjects, useTakeTask } from "../../api/queries.ts";
 import type { TaskStatus } from "../../api/types.ts";
 import { errorMessage } from "../../lib/error-messages.ts";
 import { rememberLastProject } from "../../lib/last-project.ts";
@@ -8,7 +8,7 @@ import { paths } from "../../lib/paths.ts";
 import { Alert } from "../../ui/Alert.tsx";
 import { StatusMessage } from "../../ui/StatusMessage.tsx";
 import { isProjectUnavailable, ProjectUnavailable } from "../projects/ProjectUnavailable.tsx";
-import { clearFilters, filterTasks, groupByStatus, stageOptions } from "./board-model.ts";
+import { assigneeOptions, clearFilters, filterTasks, groupByStatus, stageOptions } from "./board-model.ts";
 import { BoardView } from "./BoardView.tsx";
 import { useBoardFilters } from "./use-board-filters.ts";
 
@@ -16,6 +16,8 @@ import { useBoardFilters } from "./use-board-filters.ts";
 export function BoardContainer() {
   const slug = useParams().slug ?? "";
   const board = useBoard(slug);
+  // Until (or unless) they load, the assignee filter offers the people assigned on the board.
+  const participants = useParticipants(slug).data;
   const projects = useProjects();
   const me = useCurrentUser().data?.githubLogin ?? "";
   const take = useTakeTask(slug);
@@ -29,6 +31,10 @@ export function BoardContainer() {
   const tasks = board.data;
   const columns = useMemo(() => groupByStatus(filterTasks(tasks ?? [], filters, me), filters.sort), [tasks, filters, me]);
   const stages = useMemo(() => stageOptions(tasks ?? [], filters.stages), [tasks, filters.stages]);
+  const assignees = useMemo(
+    () => assigneeOptions(participants ?? [], tasks ?? [], me, filters.assignee),
+    [participants, tasks, me, filters.assignee],
+  );
 
   useEffect(() => {
     if (board.isSuccess) rememberLastProject(slug);
@@ -57,6 +63,7 @@ export function BoardContainer() {
         onFiltersChange={setFilters}
         onClearFilters={() => setFilters(clearFilters(filters))}
         stages={stages}
+        assignees={assignees}
         totalCount={tasks?.length ?? 0}
         selectedStatus={selectedStatus}
         onSelectStatus={setSelectedStatus}

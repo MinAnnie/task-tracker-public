@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { Route, Routes } from "react-router";
@@ -131,7 +131,9 @@ describe("New task", () => {
     await user.type(await screen.findByRole("textbox", { name: "Title" }), "  Ship it ");
     await user.click(screen.getByRole("radio", { name: "High" }));
     await user.type(screen.getByRole("textbox", { name: /Description/ }), "Details");
-    await user.selectOptions(screen.getByRole("combobox", { name: "Assignee" }), "Me (@annamiller)");
+    // The board behind the dialog has its own Assignee filter.
+    const dialog = screen.getByRole("dialog", { name: "New task" });
+    await user.selectOptions(within(dialog).getByRole("combobox", { name: "Assignee" }), "Me (@annamiller)");
     await user.type(screen.getByRole("textbox", { name: /Stage/ }), "Sprint 3");
     await user.click(screen.getByRole("button", { name: "Create task" }));
 
@@ -153,7 +155,8 @@ describe("New task", () => {
 
   it("offers Unassigned, Me, then the project's other participants", async () => {
     const { api, user } = setup();
-    const select = await screen.findByRole("combobox", { name: "Assignee" });
+    const dialog = await screen.findByRole("dialog", { name: "New task" });
+    const select = await within(dialog).findByRole("combobox", { name: "Assignee" });
     await waitFor(() =>
       expect([...select.querySelectorAll("option")].map((o) => o.textContent)).toEqual([
         "Unassigned",
@@ -176,7 +179,8 @@ describe("New task", () => {
 
   it("still offers Unassigned and Me when participants can't load", async () => {
     setup({ "GET /api/projects/app/participants": reply(403, { error: "forbidden" }) });
-    const select = await screen.findByRole("combobox", { name: "Assignee" });
+    const dialog = await screen.findByRole("dialog", { name: "New task" });
+    const select = await within(dialog).findByRole("combobox", { name: "Assignee" });
     expect([...select.querySelectorAll("option")].map((o) => o.textContent)).toEqual([
       "Unassigned",
       "Me (@annamiller)",

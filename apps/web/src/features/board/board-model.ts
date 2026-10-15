@@ -1,4 +1,11 @@
-import { TASK_PRIORITIES, TASK_STATUSES, type BoardTask, type TaskPriority, type TaskStatus } from "../../api/types.ts";
+import {
+  TASK_PRIORITIES,
+  TASK_STATUSES,
+  type BoardTask,
+  type Participant,
+  type TaskPriority,
+  type TaskStatus,
+} from "../../api/types.ts";
 import { comparePriority, compareTaskKeys, STATUS_LABELS } from "../../lib/task-labels.ts";
 
 export interface BoardColumn {
@@ -8,7 +15,9 @@ export interface BoardColumn {
 }
 
 export type Availability = "any" | "ready" | "blocked";
-export type AssigneeFilter = "all" | "mine" | "unassigned";
+type AssigneeKeyword = "all" | "mine" | "unassigned";
+/** A keyword, or the lowercased GitHub login of one member. */
+export type AssigneeFilter = AssigneeKeyword | (string & {});
 /** Order of the tasks in each column; ties fall back to priority, then key number. */
 export type BoardSort = "priority" | "newest" | "oldest" | "updated";
 
@@ -40,7 +49,9 @@ export const NO_FILTERS: BoardFilters = {
 };
 
 const AVAILABILITIES: readonly Availability[] = ["any", "ready", "blocked"];
-const ASSIGNEES: readonly AssigneeFilter[] = ["all", "mine", "unassigned"];
+const ASSIGNEE_KEYWORDS: readonly AssigneeKeyword[] = ["all", "mine", "unassigned"];
+/** GitHub login rules: alphanumerics and single inner hyphens, at most 39 characters. */
+const GITHUB_LOGIN = /^[a-z\d](?:[a-z\d]|-(?=[a-z\d])){0,38}$/i;
 const SORTS: readonly BoardSort[] = ["priority", "newest", "oldest", "updated"];
 /** Query string parameters the filters own. */
 const PARAMS = {
@@ -55,6 +66,11 @@ const PARAMS = {
 const oneOf = <T extends string>(allowed: readonly T[], value: string | null, fallback: T): T =>
   allowed.includes(value as T) ? (value as T) : fallback;
 
+function parseAssignee(value: string | null): AssigneeFilter {
+  if (ASSIGNEE_KEYWORDS.includes(value as AssigneeKeyword)) return value as AssigneeKeyword;
+  return value !== null && GITHUB_LOGIN.test(value) ? value.toLowerCase() : "all";
+}
+
 /** Reads the filters from a query string; unknown values fall back to "no filter". */
 export function parseBoardFilters(params: URLSearchParams): BoardFilters {
   const priorities = new Set(params.getAll(PARAMS.priority));
@@ -63,7 +79,7 @@ export function parseBoardFilters(params: URLSearchParams): BoardFilters {
     availability: oneOf(AVAILABILITIES, params.get(PARAMS.availability), "any"),
     priorities: TASK_PRIORITIES.filter((priority) => priorities.has(priority)),
     stages: [...new Set(params.getAll(PARAMS.stage))],
-    assignee: oneOf(ASSIGNEES, params.get(PARAMS.assignee), "all"),
+    assignee: parseAssignee(params.get(PARAMS.assignee)),
     sort: oneOf(SORTS, params.get(PARAMS.sort), "priority"),
   };
 }
@@ -96,6 +112,38 @@ export const hasActiveFilters = (filters: BoardFilters) =>
 
 /** No filter at all, keeping the chosen sort. */
 export const clearFilters = (filters: BoardFilters): BoardFilters => ({ ...NO_FILTERS, sort: filters.sort });
+
+/**
+ * The assignee choices: All, Mine, Unassigned, then each person by login, labelled by
+ * name (else login). People are the project participants plus anyone assigned on the
+ * board (a removed member, say) and the selected login even when it matches nobody, so
+ * a URL never filters silently. The caller is left out (Mine covers them) unless selected.
+ */
+export function assigneeOptions(
+  participants: readonly Participant[],
+  tasks: readonly BoardTask[],
+  me: string,
+  selected: AssigneeFilter,
+): { value: AssigneeFilter; label: string }[] {
+  const people = new Map<string, string>();
+  const add = (login: string, name: string | null) => {
+    const value = login.toLowerCase();
+    if (!people.has(value)) people.set(value, name ?? login);
+  };
+  for (const person of participants) add(person.login, person.name);
+  for (const task of tasks) if (task.assignee) add(task.assignee.login, task.assignee.name);
+  if (!ASSIGNEE_KEYWORDS.includes(selected as AssigneeKeyword)) add(selected, null);
+  if (selected !== me.toLowerCase()) people.delete(me.toLowerCase());
+  const others = [...people]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([value, label]) => ({ value, label }));
+  return [
+    { value: "all", label: "All" },
+    { value: "mine", label: "Mine" },
+    { value: "unassigned", label: "Unassigned" },
+    ...others,
+  ];
+}
 
 /**
  * The stages to offer: those of the tasks plus any already selected, sorted
@@ -138,9 +186,12 @@ export function groupByStatus(tasks: readonly BoardTask[], sort: BoardSort = "pr
 const matchesAvailability = (task: BoardTask, availability: Availability) =>
   availability === "any" || (availability === "ready" ? task.canTake : task.pendingDependencies.length > 0);
 
-const matchesAssignee = (task: BoardTask, assignee: AssigneeFilter, me: string) =>
-  assignee === "all" ||
-  (assignee === "unassigned" ? task.assignee === null : task.assignee?.login.toLowerCase() === me.toLowerCase());
+function matchesAssignee(task: BoardTask, assignee: AssigneeFilter, me: string): boolean {
+  if (assignee === "all") return true;
+  if (assignee === "unassigned") return task.assignee === null;
+  const login = assignee === "mine" ? me : assignee;
+  return task.assignee?.login.toLowerCase() === login.toLowerCase();
+}
 
 /** The tasks that pass every filter; `me` is the signed-in user's login. */
 export function filterTasks(tasks: readonly BoardTask[], filters: BoardFilters, me: string): BoardTask[] {

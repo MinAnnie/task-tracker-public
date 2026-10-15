@@ -143,18 +143,57 @@ describe("Board", () => {
   it("filters by assignee: mine (the caller's tasks) or unassigned", async () => {
     const { user } = setup();
     await screen.findByText("Export tasks to CSV");
-    const assignee = within(filterToolbar()).getByRole("radiogroup", { name: "Assignee" });
-    expect(within(assignee).getByRole("radio", { name: "All" })).toBeChecked();
+    const assignee = within(filterToolbar()).getByRole("combobox", { name: "Assignee" });
+    expect(assignee).toHaveValue("all");
 
-    await user.click(within(assignee).getByRole("radio", { name: "Mine" }));
+    await user.selectOptions(assignee, "Mine");
     expect(cardKeys("To do")).toEqual([]);
     expect(cardKeys("In progress")).toEqual(["RF-9"]);
     expect(cardKeys("In review")).toEqual(["RF-4"]);
     expect(location()).toBe("/projects/app?assignee=mine");
 
-    await user.click(within(assignee).getByRole("radio", { name: "Unassigned" }));
+    await user.selectOptions(assignee, "Unassigned");
     expect(cardKeys("To do")).toEqual(["RF-14", "RF-12"]);
     expect(cardKeys("In review")).toEqual([]);
+  });
+
+  it("filters by any member: the participants plus anyone assigned on the board, but not the caller", async () => {
+    const { user } = setup({
+      "GET /api/projects/app/participants": [
+        mine,
+        { login: "zoe", name: "Zoe Ruiz", avatarUrl: null },
+        { login: "maria-dev", name: null, avatarUrl: null },
+      ],
+    });
+    await screen.findByText("Export tasks to CSV");
+    const assignee = within(filterToolbar()).getByRole("combobox", { name: "Assignee" });
+    await waitFor(() =>
+      expect(within(assignee).getAllByRole("option").map((o) => o.textContent)).toEqual([
+        "All",
+        "Mine",
+        "Unassigned",
+        "juanperez",
+        "maria-dev",
+        "Zoe Ruiz",
+      ]),
+    );
+
+    await user.selectOptions(assignee, "juanperez");
+    expect(cardKeys("To do")).toEqual(["RF-13"]);
+    expect(cardKeys("In review")).toEqual([]);
+    expect(location()).toBe("/projects/app?assignee=juanperez");
+    expect(screen.getByRole("button", { name: "Filters (1)" })).toBeInTheDocument();
+
+    await user.selectOptions(assignee, "Zoe Ruiz");
+    expect(screen.getByText("Showing 0 of 5 tasks")).toBeInTheDocument();
+  });
+
+  it("applies a member from the URL even when nobody by that login is known", async () => {
+    setup({ "GET /api/projects/app/participants": [mine] }, "/projects/app?assignee=Ghost");
+    await screen.findByText("Showing 0 of 5 tasks");
+    const assignee = within(filterToolbar()).getByRole("combobox", { name: "Assignee" });
+    expect(assignee).toHaveValue("ghost");
+    expect(within(assignee).getByRole("option", { name: "ghost" })).toBeInTheDocument();
   });
 
   it("filters by availability: ready to take, or blocked by dependencies", async () => {
@@ -312,7 +351,7 @@ describe("Board", () => {
     expect(await screen.findByText("Showing 1 of 5 tasks")).toBeInTheDocument();
     expect(screen.getByRole("searchbox", { name: "Search tasks" })).toHaveValue("csv");
     expect(within(filterToolbar()).getByRole("checkbox", { name: "Low" })).toBeChecked();
-    expect(within(filterToolbar()).getByRole("radio", { name: "All" })).toBeChecked();
+    expect(within(filterToolbar()).getByRole("combobox", { name: "Assignee" })).toHaveValue("all");
   });
 
   it("applies the filters to the phone tabs and their counts", async () => {
@@ -338,7 +377,7 @@ describe("Board", () => {
       await user.click(open);
       const dialog = screen.getByRole("dialog", { name: "Filters" });
       expect(dialog).toContainElement(document.activeElement as HTMLElement);
-      expect(within(dialog).getByRole("radio", { name: "Mine" })).toBeChecked();
+      expect(within(dialog).getByRole("combobox", { name: "Assignee" })).toHaveValue("mine");
       expect(within(dialog).getByRole("checkbox", { name: "High" })).toBeChecked();
       expect(within(dialog).getByRole("group", { name: "Stage" })).toBeInTheDocument();
       expect(within(dialog).getByRole("combobox", { name: "Sort" })).toHaveValue("priority");
@@ -348,6 +387,17 @@ describe("Board", () => {
       await user.click(within(dialog).getByRole("button", { name: "Show 1 task" }));
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
       expect(open).toHaveFocus();
+    });
+
+    it("filters by a member from the sheet", async () => {
+      const { user } = setup();
+      await screen.findByText("Export tasks to CSV");
+      await user.click(screen.getByRole("button", { name: "Filters" }));
+      const dialog = screen.getByRole("dialog", { name: "Filters" });
+
+      await user.selectOptions(within(dialog).getByRole("combobox", { name: "Assignee" }), "juanperez");
+      expect(location()).toBe("/projects/app?assignee=juanperez");
+      expect(screen.getByRole("button", { name: "Filters (1)" })).toBeInTheDocument();
     });
 
     it("sorts from the sheet", async () => {

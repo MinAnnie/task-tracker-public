@@ -3,6 +3,7 @@ import type { BoardTask } from "../../api/types.ts";
 import { boardTask } from "../../test/fixtures.ts";
 import {
   activeFilterCount,
+  assigneeOptions,
   clearFilters,
   compareBoardTasks,
   filterTasks,
@@ -140,6 +141,12 @@ describe("filterTasks", () => {
     expect(run({ assignee: "unassigned" })).toEqual(["RF-12", "AUTH-08B", "RF-20"]);
   });
 
+  it("keeps the tasks of one member, comparing logins case-insensitively", () => {
+    expect(run({ assignee: "juan" })).toEqual(["RF-13"]);
+    expect(run({ assignee: "anna" }, "someone-else")).toEqual(["RF-1"]);
+    expect(run({ assignee: "nobody-here" })).toEqual([]);
+  });
+
   it("'ready' keeps the tasks the server says can be taken; 'blocked' those with pending dependencies", () => {
     expect(run({ availability: "ready" })).toEqual(["RF-12"]);
     expect(run({ availability: "blocked" })).toEqual(["AUTH-08B"]);
@@ -196,10 +203,17 @@ describe("parseBoardFilters / writeBoardFilters", () => {
     expect(params.toString()).toBe("other=1");
   });
 
+  it("reads a GitHub login as the assignee, lowercased, keeping the keywords", () => {
+    expect(parseBoardFilters(new URLSearchParams("assignee=JuanPerez")).assignee).toBe("juanperez");
+    expect(parseBoardFilters(new URLSearchParams("assignee=mine")).assignee).toBe("mine");
+    expect(parseBoardFilters(new URLSearchParams("assignee=unassigned")).assignee).toBe("unassigned");
+    expect(writeBoardFilters({ ...NO_FILTERS, assignee: "juanperez" }).toString()).toBe("assignee=juanperez");
+  });
+
   it("ignores unknown values, deduplicates and orders priorities by rank", () => {
     const parsed = parseBoardFilters(
       new URLSearchParams(
-        "availability=soon&assignee=everyone&sort=random&priority=low&priority=bogus&priority=urgent&priority=low&stage=A&stage=A",
+        "availability=soon&assignee=not+a+login!&sort=random&priority=low&priority=bogus&priority=urgent&priority=low&stage=A&stage=A",
       ),
     );
     expect(parsed).toEqual({ ...NO_FILTERS, priorities: ["urgent", "low"], stages: ["A"] });
@@ -243,6 +257,45 @@ describe("activeFilterCount / hasActiveFilters", () => {
     expect(hasActiveFilters(NO_FILTERS)).toBe(false);
     expect(hasActiveFilters({ ...NO_FILTERS, query: " x " })).toBe(true);
     expect(hasActiveFilters({ ...NO_FILTERS, assignee: "unassigned" })).toBe(true);
+    expect(activeFilterCount({ ...NO_FILTERS, assignee: "juan" })).toBe(1);
+  });
+});
+
+describe("assigneeOptions", () => {
+  const person = (login: string, name: string | null = null) => ({ login, name, avatarUrl: null });
+  const participants = [person("zoe", "Zoe Z"), person("Anna", "Anna M"), person("bob")];
+  const labels = (options: { value: string; label: string }[]) => options.map((o) => `${o.value}:${o.label}`);
+
+  it("offers All, Mine and Unassigned, then the participants by login (named, else the login) but not the caller", () => {
+    expect(labels(assigneeOptions(participants, [], "anna", "all"))).toEqual([
+      "all:All",
+      "mine:Mine",
+      "unassigned:Unassigned",
+      "bob:bob",
+      "zoe:Zoe Z",
+    ]);
+  });
+
+  it("adds assignees of the board who are no longer participants", () => {
+    const tasks = [boardTask({ assignee: person("Carl", "Carl C") }), boardTask({ assignee: person("ZOE", "Zoe Z") })];
+    expect(labels(assigneeOptions(participants, tasks, "anna", "all")).slice(3)).toEqual([
+      "bob:bob",
+      "carl:Carl C",
+      "zoe:Zoe Z",
+    ]);
+  });
+
+  it("keeps a selected login that matches nobody, so the URL never filters silently", () => {
+    expect(labels(assigneeOptions(participants, [], "anna", "ghost")).slice(3)).toEqual([
+      "bob:bob",
+      "ghost:ghost",
+      "zoe:Zoe Z",
+    ]);
+    expect(labels(assigneeOptions(participants, [], "anna", "anna")).slice(3)).toEqual([
+      "anna:Anna M",
+      "bob:bob",
+      "zoe:Zoe Z",
+    ]);
   });
 });
 

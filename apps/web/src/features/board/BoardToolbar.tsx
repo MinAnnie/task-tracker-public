@@ -3,12 +3,13 @@ import buttons from "../../ui/Button.module.css";
 import { Dialog } from "../../ui/Dialog.tsx";
 import { CloseIcon, SearchIcon } from "../../ui/icons.tsx";
 import { activeFilterCount, clearFilters, hasActiveFilters, type BoardFilters } from "./board-model.ts";
-import { FilterFields, type StageOption } from "./BoardFilterFields.tsx";
+import { FilterFields, type AssigneeOption, type StageOption } from "./BoardFilterFields.tsx";
 import styles from "./BoardFilters.module.css";
 
 interface BoardToolbarProps {
   filters: BoardFilters;
   stages: readonly StageOption[];
+  assignees: readonly AssigneeOption[];
   /** Typing in the search replaces the current history entry; other changes add one. */
   onFiltersChange: (filters: BoardFilters, options?: { replace?: boolean }) => void;
   /** Tasks left after filtering, for the sheet's "Show N tasks". */
@@ -19,7 +20,7 @@ interface BoardToolbarProps {
  * Search plus filters and the sort. Desktop shows the filters in a wrapping row; phones keep the
  * search and move the filters into a sheet behind "Filters (n)".
  */
-export function BoardToolbar({ filters, stages, onFiltersChange, shownCount }: BoardToolbarProps) {
+export function BoardToolbar({ filters, stages, assignees, onFiltersChange, shownCount }: BoardToolbarProps) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const titleId = useId();
   const count = activeFilterCount(filters);
@@ -49,7 +50,13 @@ export function BoardToolbar({ filters, stages, onFiltersChange, shownCount }: B
       </button>
 
       <div className={styles.row}>
-        <FilterFields filters={filters} stages={stages} onChange={onFiltersChange} layout="toolbar" />
+        <FilterFields
+          filters={filters}
+          stages={stages}
+          assignees={assignees}
+          onChange={onFiltersChange}
+          layout="toolbar"
+        />
         {hasActiveFilters(filters) && (
           <button type="button" className={`${buttons.button} ${styles.clear}`} onClick={clear}>
             Clear filters
@@ -73,7 +80,13 @@ export function BoardToolbar({ filters, stages, onFiltersChange, shownCount }: B
                 <CloseIcon />
               </button>
             </div>
-            <FilterFields filters={filters} stages={stages} onChange={onFiltersChange} layout="sheet" />
+            <FilterFields
+              filters={filters}
+              stages={stages}
+              assignees={assignees}
+              onChange={onFiltersChange}
+              layout="sheet"
+            />
             <div className={styles.sheetFooter}>
               <button type="button" className={`${buttons.button} ${styles.footerButton}`} onClick={clear}>
                 Clear filters

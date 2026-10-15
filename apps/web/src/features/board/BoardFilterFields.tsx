@@ -9,9 +9,17 @@ export interface StageOption {
   label: string;
 }
 
+/** An assignee choice: a keyword (All, Mine, Unassigned) or a member's login. */
+export interface AssigneeOption {
+  value: AssigneeFilter;
+  label: string;
+}
+
 export interface FilterFieldsProps {
   filters: BoardFilters;
   stages: readonly StageOption[];
+  /** See `assigneeOptions` in the board model. */
+  assignees: readonly AssigneeOption[];
   onChange: (filters: BoardFilters) => void;
   /** `toolbar`: one compact row (desktop); `sheet`: stacked lists with large targets (phones). */
   layout: "toolbar" | "sheet";
@@ -21,12 +29,6 @@ const AVAILABILITY_OPTIONS: { value: Availability; label: string }[] = [
   { value: "any", label: "Any" },
   { value: "ready", label: "Ready to take" },
   { value: "blocked", label: "Blocked by dependencies" },
-];
-
-const ASSIGNEE_OPTIONS: { value: AssigneeFilter; label: string }[] = [
-  { value: "all", label: "All" },
-  { value: "mine", label: "Mine" },
-  { value: "unassigned", label: "Unassigned" },
 ];
 
 const SORT_OPTIONS: { value: BoardSort; label: string }[] = [
@@ -40,7 +42,7 @@ const toggle = <T,>(list: readonly T[], value: T) =>
   list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
 
 /** Availability, assignee, priority and stage filters plus the sort; every change reports the whole set. */
-export function FilterFields({ filters, stages, onChange, layout }: FilterFieldsProps) {
+export function FilterFields({ filters, stages, assignees, onChange, layout }: FilterFieldsProps) {
   const id = useId();
   const set = (changes: Partial<BoardFilters>) => onChange({ ...filters, ...changes });
 
@@ -54,11 +56,11 @@ export function FilterFields({ filters, stages, onChange, layout }: FilterFields
       layout={layout}
     />
   );
+  // A select, since a project can have many members.
   const assignee = (
-    <RadioGroup
-      legend="Assignee"
-      name={`${id}-assignee`}
-      options={ASSIGNEE_OPTIONS}
+    <SelectField
+      label="Assignee"
+      options={assignees}
       value={filters.assignee}
       onChange={(value) => set({ assignee: value })}
       layout={layout}
@@ -128,7 +130,7 @@ export function FilterFields({ filters, stages, onChange, layout }: FilterFields
 
 interface SelectFieldProps<T extends string> {
   label: string;
-  options: { value: T; label: string }[];
+  options: readonly { value: T; label: string }[];
   value: T;
   onChange: (value: T) => void;
   layout: FilterFieldsProps["layout"];

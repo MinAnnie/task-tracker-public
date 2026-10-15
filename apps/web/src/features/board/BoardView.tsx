@@ -4,7 +4,7 @@ import { Alert } from "../../ui/Alert.tsx";
 import buttons from "../../ui/Button.module.css";
 import { PlusIcon } from "../../ui/icons.tsx";
 import type { BoardColumn, BoardFilters } from "./board-model.ts";
-import type { StageOption } from "./BoardFilterFields.tsx";
+import type { AssigneeOption, StageOption } from "./BoardFilterFields.tsx";
 import { BoardToolbar } from "./BoardToolbar.tsx";
 import styles from "./BoardView.module.css";
 import { TaskCard } from "./TaskCard.tsx";
@@ -18,6 +18,7 @@ export interface BoardViewProps {
   onFiltersChange: (filters: BoardFilters, options?: { replace?: boolean }) => void;
   onClearFilters: () => void;
   stages: readonly StageOption[];
+  assignees: readonly AssigneeOption[];
   /** Tasks in the project before filtering. */
   totalCount: number;
   /** Column shown on phones, where the board shows one status at a time. */
@@ -50,6 +51,7 @@ export function BoardView(props: BoardViewProps) {
           <BoardToolbar
             filters={props.filters}
             stages={props.stages}
+            assignees={props.assignees}
             onFiltersChange={props.onFiltersChange}
             shownCount={shownCount}
           />
