@@ -99,6 +99,11 @@ export interface NewTaskInput {
 }
 
 export interface TaskChanges {
+  title?: string;
+  /** `null` clears it. */
+  description?: string | null;
+  /** `null` clears it. */
+  stage?: string | null;
   status?: TaskStatus;
   priority?: TaskPriority;
   /** Admins only; `null` unassigns. */

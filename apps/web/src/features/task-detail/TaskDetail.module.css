@@ -50,8 +50,22 @@
   color: var(--color-muted);
 }
 
+.titleRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.titleRow > button {
+  flex: none;
+  margin-top: 2px;
+}
+
 .title {
   margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: 24px;
   font-weight: 600;
   line-height: 1.3;

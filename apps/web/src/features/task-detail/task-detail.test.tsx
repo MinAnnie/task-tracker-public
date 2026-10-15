@@ -327,6 +327,140 @@ describe("Task detail", () => {
     });
   });
 
+  describe("editing", () => {
+    const openEditor = async (user: ReturnType<typeof userEvent.setup>) => {
+      await user.click(await screen.findByRole("button", { name: "Edit" }));
+      return screen.getByRole("dialog", { name: "Edit task" });
+    };
+    const patches = (api: { calls: { route: string; body: unknown }[] }) =>
+      api.calls.filter((c) => c.route === `PATCH ${TASK}`);
+
+    it("lets any participant edit the title, description and stage, sending only what changed", async () => {
+      const { api, user } = setup(taskDetail({ assignee: juan, canTake: false }), {
+        "GET /api/projects/app/tasks": [
+          boardTask({ key: "RF-13", stage: "Sprint 4" }),
+          boardTask({ key: "RF-14", stage: "Sprint 3" }),
+          boardTask({ key: "RF-15", stage: "Backlog" }),
+        ],
+        [`PATCH ${TASK}`]: taskDetail({ title: "Post merged PRs to Discord", stage: null }),
+      });
+      const dialog = await openEditor(user);
+      const title = within(dialog).getByRole("textbox", { name: "Title" });
+      expect(title).toHaveValue("Discord bot: post merged PRs");
+      expect(title).toHaveFocus();
+      expect(within(dialog).getByRole("textbox", { name: /Description/ })).toHaveValue(
+        "Post a message when a linked pull request is merged.",
+      );
+      const stage = within(dialog).getByRole("combobox", { name: /Stage/ });
+      expect(stage).toHaveValue("Sprint 3");
+      const suggestions = document.getElementById(stage.getAttribute("list") ?? "");
+      expect([...(suggestions?.querySelectorAll("option") ?? [])].map((o) => o.value)).toEqual([
+        "Backlog",
+        "Sprint 3",
+        "Sprint 4",
+      ]);
+
+      await user.clear(title);
+      await user.type(title, "  Post merged PRs to Discord ");
+      await user.clear(stage);
+      await user.click(within(dialog).getByRole("button", { name: "Save" }));
+
+      await waitFor(() =>
+        expect(patches(api)).toEqual([
+          { route: `PATCH ${TASK}`, body: { title: "Post merged PRs to Discord", stage: null } },
+        ]),
+      );
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+      await waitFor(() => expect(api.calls.filter((c) => c.route === `GET ${TASK}`)).toHaveLength(2));
+      expect(screen.getByRole("button", { name: "Edit" })).toHaveFocus();
+    });
+
+    it("clears the description with null", async () => {
+      const { api, user } = setup(taskDetail(), { [`PATCH ${TASK}`]: taskDetail({ description: null }) });
+      const dialog = await openEditor(user);
+      await user.clear(within(dialog).getByRole("textbox", { name: /Description/ }));
+      await user.type(within(dialog).getByRole("textbox", { name: /Description/ }), "   ");
+      await user.click(within(dialog).getByRole("button", { name: "Save" }));
+      await waitFor(() =>
+        expect(patches(api)).toEqual([{ route: `PATCH ${TASK}`, body: { description: null } }]),
+      );
+    });
+
+    it("just closes when nothing changed", async () => {
+      const { api, user } = setup(taskDetail());
+      const dialog = await openEditor(user);
+      await user.type(within(dialog).getByRole("textbox", { name: "Title" }), "  ");
+      await user.click(within(dialog).getByRole("button", { name: "Save" }));
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(patches(api)).toEqual([]);
+    });
+
+    it("checks the fields like the server does, without sending anything", async () => {
+      const { api, user } = setup(taskDetail());
+      const dialog = await openEditor(user);
+      const title = within(dialog).getByRole("textbox", { name: "Title" });
+      const description = within(dialog).getByRole("textbox", { name: /Description/ });
+      const stage = within(dialog).getByRole("combobox", { name: /Stage/ });
+
+      await user.clear(title);
+      await user.type(title, "   ");
+      await user.click(description);
+      await user.paste("x".repeat(10_001));
+      await user.clear(stage);
+      await user.paste("s".repeat(51));
+      await user.click(within(dialog).getByRole("button", { name: "Save" }));
+
+      expect(title).toHaveAttribute("aria-invalid", "true");
+      expect(title).toHaveAccessibleDescription("Give the task a title.");
+      expect(title).toHaveFocus();
+      expect(description).toHaveAccessibleDescription("Keep the description under 10,000 characters.");
+      expect(stage).toHaveAccessibleDescription("Keep the stage under 50 characters.");
+      expect(patches(api)).toEqual([]);
+
+      await user.clear(title);
+      await user.paste("t".repeat(201));
+      await user.click(within(dialog).getByRole("button", { name: "Save" }));
+      expect(title).toHaveAccessibleDescription("Keep the title under 200 characters.");
+    });
+
+    it("shows the server's refusal on the field that caused it, keeping the dialog open", async () => {
+      const { user } = setup(taskDetail(), { [`PATCH ${TASK}`]: reply(400, { error: "invalid_task_stage" }) });
+      const dialog = await openEditor(user);
+      const stage = within(dialog).getByRole("combobox", { name: /Stage/ });
+      await user.clear(stage);
+      await user.type(stage, "Sprint 9");
+      await user.click(within(dialog).getByRole("button", { name: "Save" }));
+
+      await waitFor(() => expect(stage).toHaveAccessibleDescription("The stage can be at most 50 characters."));
+      expect(stage).toHaveAttribute("aria-invalid", "true");
+      expect(stage).toHaveValue("Sprint 9");
+      expect(within(dialog).getByRole("button", { name: "Save" })).toBeEnabled();
+    });
+
+    it("shows other refusals above the fields", async () => {
+      const { user } = setup(taskDetail(), { [`PATCH ${TASK}`]: reply(403, { error: "forbidden" }) });
+      const dialog = await openEditor(user);
+      await user.type(within(dialog).getByRole("textbox", { name: "Title" }), "!");
+      await user.click(within(dialog).getByRole("button", { name: "Save" }));
+      expect(await within(dialog).findByRole("alert")).toHaveTextContent("You don’t have permission to do that.");
+    });
+
+    it("cancels without saving, with the button or Escape", async () => {
+      const { api, user } = setup(taskDetail());
+      let dialog = await openEditor(user);
+      await user.type(within(dialog).getByRole("textbox", { name: "Title" }), " v2");
+      await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Edit" })).toHaveFocus();
+
+      dialog = await openEditor(user);
+      expect(within(dialog).getByRole("textbox", { name: "Title" })).toHaveValue("Discord bot: post merged PRs");
+      await user.keyboard("{Escape}");
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(patches(api)).toEqual([]);
+    });
+  });
+
   it("explains a task that does not exist", async () => {
     setup(taskDetail(), { [`GET ${TASK}`]: reply(404, { error: "task_not_found" }) });
     expect(await screen.findByRole("alert")).toHaveTextContent("There’s no task with that key in this project.");

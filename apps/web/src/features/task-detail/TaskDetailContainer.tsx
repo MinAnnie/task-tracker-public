@@ -17,6 +17,7 @@ import { paths } from "../../lib/paths.ts";
 import { Alert } from "../../ui/Alert.tsx";
 import { StatusMessage } from "../../ui/StatusMessage.tsx";
 import { isProjectUnavailable, ProjectUnavailable } from "../projects/ProjectUnavailable.tsx";
+import { editTaskFailure, stageSuggestions } from "./edit-task-model.ts";
 import { buildTaskPrompt } from "./task-prompt.ts";
 import { TaskDetailView } from "./TaskDetailView.tsx";
 
@@ -36,6 +37,8 @@ export function TaskDetailContainer() {
   const take = useTakeTask(slug);
   const release = useReleaseTask(slug);
   const update = useUpdateTask(slug, key);
+  // Its own mutation, so edit failures show in the edit dialog, not the assignment panel.
+  const edit = useUpdateTask(slug, key);
   const addDependency = useAddDependency(slug, key);
   const removeDependency = useRemoveDependency(slug, key);
   const remove = useDeleteTask(slug);
@@ -103,6 +106,13 @@ export function TaskDetailContainer() {
           resetDependencyErrors();
           return removeDependency.mutateAsync(dependsOnKey);
         },
+      }}
+      edit={{
+        stages: stageSuggestions(board.data ?? []),
+        saving: edit.isPending,
+        error: edit.isError ? editTaskFailure(edit.error) : undefined,
+        onSave: (changes) => edit.mutateAsync(changes),
+        onDraftChange: () => edit.reset(),
       }}
       deletion={
         me.role === "admin"
