@@ -20,6 +20,8 @@ const taskColumns = {
   status: tasks.status,
   priority: tasks.priority,
   stage: tasks.stage,
+  createdAt: tasks.createdAt,
+  updatedAt: tasks.updatedAt,
   assignee: {
     id: users.id,
     githubLogin: users.githubLogin,

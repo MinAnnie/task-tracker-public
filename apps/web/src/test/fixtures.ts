@@ -37,6 +37,8 @@ export function boardTask(overrides: Partial<BoardTask> = {}): BoardTask {
     dependsOn: [],
     pendingDependencies: [],
     canTake: true,
+    createdAt: "2026-10-01T15:00:00.000Z",
+    updatedAt: "2026-10-01T15:00:00.000Z",
     ...overrides,
   };
 }
@@ -55,6 +57,8 @@ export function taskDetail(overrides: Partial<TaskDetail> = {}): TaskDetail {
     dependsOn: [],
     blocks: [],
     pullRequests: [],
+    createdAt: "2026-10-01T15:00:00.000Z",
+    updatedAt: "2026-10-02T15:00:00.000Z",
     ...overrides,
   };
 }

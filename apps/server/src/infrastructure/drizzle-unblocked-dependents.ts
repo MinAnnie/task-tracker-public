@@ -86,6 +86,8 @@ function selectUnblocked(db: Executor, candidates: SQL): Promise<TaskRecord[]> {
       status: tasks.status,
       priority: tasks.priority,
       stage: tasks.stage,
+      createdAt: tasks.createdAt,
+      updatedAt: tasks.updatedAt,
       assignee: { id: users.id, githubLogin: users.githubLogin, name: users.name, avatarUrl: users.avatarUrl },
     })
     .from(tasks)

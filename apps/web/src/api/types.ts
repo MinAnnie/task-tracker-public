@@ -52,6 +52,9 @@ export interface BoardTask {
   dependsOn: string[];
   pendingDependencies: string[];
   canTake: boolean;
+  /** ISO-8601 timestamps. */
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface TaskLink {
@@ -82,6 +85,9 @@ export interface TaskDetail {
   dependsOn: TaskLink[];
   blocks: TaskLink[];
   pullRequests: TaskPullRequest[];
+  /** ISO-8601 timestamps. */
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface NewTaskInput {

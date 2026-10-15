@@ -4,6 +4,7 @@ import { TASK_STATUSES } from "./domain/task-status.ts";
 const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
 const nullable = (schema: Record<string, unknown>) => ({ oneOf: [schema, { type: "null" }] });
 const strings = { type: "array", items: { type: "string" } };
+const timestamp = { type: "string", format: "date-time", description: "ISO-8601 timestamp." };
 const error = (description: string) => ({
   description,
   content: { "application/json": { schema: ref("Error") } },
@@ -155,6 +156,8 @@ export const openApiDocument = {
           "dependsOn",
           "pendingDependencies",
           "canTake",
+          "createdAt",
+          "updatedAt",
         ],
         properties: {
           key: { type: "string" },
@@ -175,6 +178,8 @@ export const openApiDocument = {
           dependsOn: { ...strings, description: "Keys of the tasks this one depends on." },
           pendingDependencies: { ...strings, description: "Keys of the dependencies that are not done yet." },
           canTake: { type: "boolean", description: "Always false for API tokens." },
+          createdAt: timestamp,
+          updatedAt: { ...timestamp, description: "When any field of the task last changed." },
         },
       },
       TaskDetail: {
@@ -193,6 +198,8 @@ export const openApiDocument = {
           "dependsOn",
           "blocks",
           "pullRequests",
+          "createdAt",
+          "updatedAt",
         ],
         properties: {
           key: { type: "string" },
@@ -222,6 +229,8 @@ export const openApiDocument = {
               },
             },
           },
+          createdAt: timestamp,
+          updatedAt: { ...timestamp, description: "When any field of the task last changed." },
         },
       },
       Error: {

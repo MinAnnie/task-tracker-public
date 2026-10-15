@@ -26,6 +26,8 @@ export interface StoredTask {
   priority: TaskPriority;
   stage: string | null;
   assigneeId: number | null;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 /**
@@ -47,6 +49,8 @@ export class InMemoryTaskStore implements TaskStore {
   projectLocks: string[] = [];
   /** Keys locked through `findTaskByKey(projectId, key, { lock: true })`. */
   taskLocks: string[] = [];
+  /** Clock for the timestamps the database would set (`now()` defaults, `updated_at` on update). */
+  now: () => Date = () => new Date();
   private nextId = 1000;
 
   async transaction<T>(work: (store: TaskStore) => Promise<T>): Promise<T> {
@@ -98,7 +102,8 @@ export class InMemoryTaskStore implements TaskStore {
       throw new Error(`duplicate key value violates unique constraint (${task.key})`);
     }
     const id = this.nextId++;
-    this.tasks.push({ ...task, id });
+    const now = this.now();
+    this.tasks.push({ ...task, id, createdAt: now, updatedAt: now });
     return { id };
   }
 
@@ -138,7 +143,7 @@ export class InMemoryTaskStore implements TaskStore {
   }
 
   async updateTask(taskId: number, changes: TaskChanges) {
-    Object.assign(this.task(taskId), changes);
+    Object.assign(this.task(taskId), changes, { updatedAt: this.now() });
   }
 
   async takeTask(taskId: number, userId: number) {
@@ -149,6 +154,7 @@ export class InMemoryTaskStore implements TaskStore {
     if (task.assigneeId !== null || task.status === "done" || blocked) return false;
     task.assigneeId = userId;
     if (task.status === "todo") task.status = "in_progress";
+    task.updatedAt = this.now();
     return true;
   }
 

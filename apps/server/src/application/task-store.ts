@@ -31,6 +31,9 @@ export interface TaskRecord {
   priority: TaskPriority;
   stage: string | null;
   assignee: TaskUserRecord | null;
+  createdAt: Date;
+  /** When any field of the task last changed. */
+  updatedAt: Date;
 }
 
 /** Another task of the same project, as referenced by a dependency. */

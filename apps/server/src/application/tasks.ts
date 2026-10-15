@@ -73,6 +73,9 @@ export interface BoardTask {
   pendingDependencies: string[];
   /** Whether the caller may take the task right now. */
   canTake: boolean;
+  /** ISO-8601 timestamps. */
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface TaskDetail {
@@ -96,6 +99,9 @@ export interface TaskDetail {
     state: PullRequestState;
     author: string;
   }[];
+  /** ISO-8601 timestamps. */
+  createdAt: string;
+  updatedAt: string;
 }
 
 /**
@@ -268,6 +274,8 @@ async function describeTask(store: TaskStore, task: TaskRecord, takeable = true)
         state,
         author: authorGithubLogin,
       })),
+    createdAt: task.createdAt.toISOString(),
+    updatedAt: task.updatedAt.toISOString(),
   };
 }
 
@@ -373,6 +381,8 @@ export async function listTasks(
         dependsOn: dependencies.map((d) => d.key),
         pendingDependencies: pending,
         canTake: !isApiTokenViewer(user) && canTake(task, pending),
+        createdAt: task.createdAt.toISOString(),
+        updatedAt: task.updatedAt.toISOString(),
       };
     });
   return { status: "ok", tasks: board };

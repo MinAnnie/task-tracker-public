@@ -1286,6 +1286,8 @@ const boardTask: BoardTask = {
   dependsOn: [],
   pendingDependencies: [],
   canTake: true,
+  createdAt: "2026-01-01T10:00:00.000Z",
+  updatedAt: "2026-01-02T10:00:00.000Z",
 };
 
 const taskDetail: TaskDetail = {
@@ -1301,6 +1303,8 @@ const taskDetail: TaskDetail = {
   dependsOn: [{ key: "RF-0", title: "API", status: "done" }],
   blocks: [],
   pullRequests: [],
+  createdAt: "2026-01-01T10:00:00.000Z",
+  updatedAt: "2026-01-02T10:00:00.000Z",
 };
 
 /** Spies for every task use case, to assert none ran. */

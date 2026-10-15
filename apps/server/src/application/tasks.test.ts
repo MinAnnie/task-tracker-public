@@ -35,6 +35,9 @@ const bob = user(3, "bob", "member");
 /** A member of the app who does not belong to the `shop` project. */
 const outsider = user(4, "eve", "member");
 
+const CREATED_AT = new Date("2026-02-01T10:00:00.000Z");
+const UPDATED_AT = new Date("2026-02-03T12:30:00.000Z");
+
 const assigneeOf = (u: AuthenticatedUser) => ({ login: u.githubLogin, name: u.name, avatarUrl: u.avatarUrl });
 
 describe("tasks", () => {
@@ -53,6 +56,8 @@ describe("tasks", () => {
       priority: "medium",
       stage: null,
       assigneeId: null,
+      createdAt: CREATED_AT,
+      updatedAt: CREATED_AT,
       ...fields,
     };
     store.tasks.push(task);
@@ -138,6 +143,7 @@ describe("tasks", () => {
 
   describe("createTask", () => {
     it("creates a todo task with the next key and default priority", async () => {
+      store.now = () => UPDATED_AT;
       const result = await createTask(deps, mona, "shop", { title: "  Add checkout  " });
 
       expect(result).toEqual({
@@ -155,6 +161,8 @@ describe("tasks", () => {
           dependsOn: [],
           blocks: [],
           pullRequests: [],
+          createdAt: UPDATED_AT.toISOString(),
+          updatedAt: UPDATED_AT.toISOString(),
         },
       });
       expect(store.projects[0]?.nextTaskNumber).toBe(2);
@@ -262,7 +270,12 @@ describe("tasks", () => {
 
     it("summarizes assignee, pull requests and dependencies of each task", async () => {
       const api = seedTask("RF-1", { status: "done" });
-      const db = seedTask("RF-2", { status: "in_progress", assigneeId: bob.id, stage: "Backend" });
+      const db = seedTask("RF-2", {
+        status: "in_progress",
+        assigneeId: bob.id,
+        stage: "Backend",
+        updatedAt: UPDATED_AT,
+      });
       const ui = seedTask("RF-3");
       dependOn(ui, api);
       dependOn(ui, db);
@@ -285,6 +298,8 @@ describe("tasks", () => {
             dependsOn: [],
             pendingDependencies: [],
             canTake: false,
+            createdAt: CREATED_AT.toISOString(),
+            updatedAt: CREATED_AT.toISOString(),
           },
           {
             key: "RF-2",
@@ -300,6 +315,8 @@ describe("tasks", () => {
             dependsOn: [],
             pendingDependencies: [],
             canTake: false,
+            createdAt: CREATED_AT.toISOString(),
+            updatedAt: UPDATED_AT.toISOString(),
           },
           {
             key: "RF-3",
@@ -312,6 +329,8 @@ describe("tasks", () => {
             dependsOn: ["RF-1", "RF-2"],
             pendingDependencies: ["RF-2"],
             canTake: false,
+            createdAt: CREATED_AT.toISOString(),
+            updatedAt: CREATED_AT.toISOString(),
           },
         ],
       });
@@ -341,6 +360,7 @@ describe("tasks", () => {
         priority: "high",
         assigneeId: mona.id,
         status: "in_progress",
+        updatedAt: UPDATED_AT,
       });
       const ui = seedTask("RF-3");
       dependOn(checkout, api);
@@ -373,6 +393,8 @@ describe("tasks", () => {
               author: "octocat",
             },
           ],
+          createdAt: CREATED_AT.toISOString(),
+          updatedAt: UPDATED_AT.toISOString(),
         },
       });
     });

@@ -94,6 +94,8 @@ describe("OpenAPI document", () => {
         priority: "high",
         stage: "Backend",
         assigneeId: 2,
+        createdAt: new Date("2026-01-01T10:00:00.000Z"),
+        updatedAt: new Date("2026-01-02T10:00:00.000Z"),
       },
       {
         id: 2,
@@ -105,6 +107,8 @@ describe("OpenAPI document", () => {
         priority: "medium",
         stage: null,
         assigneeId: null,
+        createdAt: new Date("2026-01-03T10:00:00.000Z"),
+        updatedAt: new Date("2026-01-03T10:00:00.000Z"),
       },
     );
     store.dependencies.push({ taskId: 2, dependsOnTaskId: 1 });

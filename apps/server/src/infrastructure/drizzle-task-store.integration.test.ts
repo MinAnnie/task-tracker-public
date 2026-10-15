@@ -76,6 +76,8 @@ const row = async (key: string) => {
   return task;
 };
 
+const iso = expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+
 const nextTaskNumber = async (projectId: number) =>
   (await db.select({ next: projects.nextTaskNumber }).from(projects).where(eq(projects.id, projectId)))[0]?.next;
 
@@ -139,6 +141,8 @@ describe("createDrizzleTaskStore (Postgres)", () => {
           dependsOn: [],
           blocks: [],
           pullRequests: [],
+          createdAt: iso,
+          updatedAt: iso,
         },
       });
       expect(second).toMatchObject({
@@ -208,6 +212,8 @@ describe("createDrizzleTaskStore (Postgres)", () => {
         status: "in_progress",
         assigneeId: mona.id,
         description: "Use Wompi",
+        createdAt: new Date("2026-01-02T09:00:00Z"),
+        updatedAt: new Date("2026-01-05T18:30:00Z"),
       });
       const ui = await seedTask(shop, "RF-10", { priority: "urgent" });
       await seedTask(blog, "BL-1");
@@ -249,6 +255,8 @@ describe("createDrizzleTaskStore (Postgres)", () => {
             dependsOn: ["RF-1"],
             pendingDependencies: [],
             canTake: false,
+            createdAt: "2026-01-02T09:00:00.000Z",
+            updatedAt: "2026-01-05T18:30:00.000Z",
           },
           expect.objectContaining({
             key: "RF-10",
@@ -284,9 +292,22 @@ describe("createDrizzleTaskStore (Postgres)", () => {
               author: "mona",
             },
           ],
+          createdAt: "2026-01-02T09:00:00.000Z",
+          updatedAt: "2026-01-05T18:30:00.000Z",
         },
       });
       expect(await getTask(deps, bob, "shop", "BL-1")).toEqual({ status: "task_not_found" });
+    });
+
+    it("touches updatedAt (not createdAt) when a task changes", async () => {
+      const old = new Date("2026-01-01T00:00:00Z");
+      await seedTask(shop, "RF-1", { createdAt: old, updatedAt: old });
+
+      const result = await updateTask(deps, mona, "shop", "RF-1", { title: "Renamed" });
+
+      expect(result).toMatchObject({ status: "ok", task: { createdAt: old.toISOString() } });
+      const updatedAt = result.status === "ok" ? Date.parse(result.task.updatedAt) : 0;
+      expect(updatedAt).toBeGreaterThan(old.getTime());
     });
 
     it("prefers the exact key when keys differ only by case", async () => {

@@ -119,6 +119,7 @@ describe("runImportTasksCli", () => {
     const seed = (id: number, key: string) =>
       store.tasks.push({
         id, projectId: 1, key, title: key, description: null, status: "todo", priority: "medium", stage: null, assigneeId: null,
+        createdAt: new Date("2026-01-01T00:00:00.000Z"), updatedAt: new Date("2026-01-01T00:00:00.000Z"),
       });
 
     beforeEach(() => {
