@@ -31,7 +31,8 @@
 | 🪪 **Discord account linking** | Connect your Discord account from the account menu (OAuth, `identify` scope only). Linked users get a real `@mention` when a task is assigned to them, and can use the bot. |
 | ⌨️ **Slash commands** | `/tasks`, `/mine`, `/task`, `/take` and `/release` right from the project's channel, with key autocomplete and private replies. |
 | 📥 **Bulk import CLI** | Load a whole backlog, with dependencies, from one JSON file with the `import-tasks` command (there is no import screen in the web app). Supports `--dry-run`; everything is validated first and written in a single transaction. |
-| 🔎 **Board filters** | Search by text and filter by availability (ready or blocked), priority, stage and assignee; the filters live in the URL, so you can share them. |
+| 🔎 **Board filters** | Search by text, filter by availability (ready or blocked), priority, stage and any team member, and sort by priority, newest, oldest or recently updated. Everything lives in the URL, so you can share the view. |
+| ✏️ **Inline editing** | Fix a task's title, description or stage from its detail page, with the same validation as the API. |
 | 🤖 **Copy for AI** | Every task can be copied as a ready-made Markdown brief for your coding assistant. |
 | 🧠 **MCP server** | Project-scoped, read-only API tokens plus an MCP server, so an agent can ask "what should I work on next?". |
 
