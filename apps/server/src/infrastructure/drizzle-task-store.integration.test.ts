@@ -21,6 +21,7 @@ import {
   members,
   projectMembers,
   projects,
+  projectStages,
   pullRequests,
   repositories,
   taskDependencies,
@@ -102,6 +103,10 @@ describe("createDrizzleTaskStore (Postgres)", () => {
     await addToProject(shop, "mona");
     await addToProject(shop, "bob");
     await addToProject(blog, "eve");
+    await db.insert(projectStages).values([
+      { projectId: shop, name: "Backend", position: 0 },
+      { projectId: shop, name: "QA", position: 1 },
+    ]);
   });
 
   describe("schema", () => {

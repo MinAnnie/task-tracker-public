@@ -146,20 +146,24 @@ export function assigneeOptions(
 }
 
 /**
- * The stages to offer: those of the tasks plus any already selected, sorted
- * naturally ("Etapa 2" before "Etapa 10"), with "No stage" last when it applies.
+ * The stages to offer: the project's, in their order, then any other stage a task has
+ * or the filter already selects, sorted naturally ("Etapa 2" before "Etapa 10"), with
+ * "No stage" last when it applies.
  */
 export function stageOptions(
+  projectStages: readonly string[],
   tasks: readonly BoardTask[],
   selected: readonly string[] = [],
 ): { value: string; label: string }[] {
-  const stages = new Set<string>(selected);
-  for (const task of tasks) stages.add(task.stage ?? NO_STAGE);
-  const named = [...stages]
+  const others = new Set<string>(selected);
+  for (const task of tasks) others.add(task.stage ?? NO_STAGE);
+  for (const stage of projectStages) others.delete(stage);
+  // Stages only tasks (or the URL) mention, defensively: after the project's, sorted naturally.
+  const extra = [...others]
     .filter((stage) => stage !== NO_STAGE)
-    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }))
-    .map((stage) => ({ value: stage, label: stage }));
-  return stages.has(NO_STAGE) ? [...named, { value: NO_STAGE, label: "No stage" }] : named;
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
+  const named = [...projectStages, ...extra].map((stage) => ({ value: stage, label: stage }));
+  return others.has(NO_STAGE) ? [...named, { value: NO_STAGE, label: "No stage" }] : named;
 }
 
 export const compareBoardTasks = (a: BoardTask, b: BoardTask) =>

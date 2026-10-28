@@ -71,6 +71,13 @@
       "when": 1793207792957,
       "tag": "0009_projects_discord_invite_url",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793208035310,
+      "tag": "0010_project_stages",
+      "breakpoints": true
     }
   ]
 }

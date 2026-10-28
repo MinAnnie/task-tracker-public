@@ -482,12 +482,60 @@ describe("importTasks", () => {
         roots: ["AX-1"],
         addedDependencies: [],
         alreadyPresentDependencyCount: 0,
+        newStages: [],
       },
     });
     expect(store.tasks.map((t) => t.key)).toEqual(["RF-01"]);
     expect(store.dependencies).toEqual([]);
     expect(store.projects[0]?.nextTaskNumber).toBe(1);
     expect(notifications.events).toEqual([]);
+  });
+
+  describe("stages", () => {
+    beforeEach(() => {
+      store.stages.push(
+        { id: 1, projectId: PROJECT_ID, name: "Backend", position: 0 },
+        { id: 2, projectId: PROJECT_ID, name: "QA", position: 1 },
+      );
+    });
+
+    const file = {
+      tasks: [
+        { ref: "a", title: "A", stage: "Etapa 2" },
+        { ref: "b", title: "B", stage: "backend" },
+        { ref: "c", title: "C", stage: "Etapa 1" },
+        { ref: "d", title: "D", stage: "ETAPA 2" },
+        { ref: "e", title: "E" },
+      ],
+    };
+
+    it("creates the stages the project lacks, appended in file order, and uses canonical names", async () => {
+      expect(await importTasks(deps, "shop", file)).toMatchObject({
+        status: "imported",
+        plan: { newStages: ["Etapa 2", "Etapa 1"] },
+      });
+      expect(store.stages.map(({ name, position }) => [name, position])).toEqual([
+        ["Backend", 0],
+        ["QA", 1],
+        ["Etapa 2", 2],
+        ["Etapa 1", 3],
+      ]);
+      expect(store.tasks.map((t) => t.stage)).toEqual(["Etapa 2", "Backend", "Etapa 1", "Etapa 2", null]);
+      expect(store.transactions).toBe(1);
+    });
+
+    it("lists the new stages without creating them on a dry run", async () => {
+      expect(await importTasks(deps, "shop", file, { dryRun: true })).toMatchObject({
+        status: "planned",
+        plan: { newStages: ["Etapa 2", "Etapa 1"] },
+      });
+      expect(store.stages).toHaveLength(2);
+    });
+
+    it("creates no stage when the file is invalid", async () => {
+      expect(await importTasks(deps, "shop", { tasks: [...file.tasks, { ref: "f" }] })).toMatchObject({ status: "invalid" });
+      expect(store.stages).toHaveLength(2);
+    });
   });
 
   it("reports an unknown project", async () => {

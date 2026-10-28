@@ -1,17 +1,16 @@
 import { isApiError } from "../../api/client.ts";
-import type { BoardTask, TaskChanges, TaskDetail } from "../../api/types.ts";
+import type { TaskChanges, TaskDetail } from "../../api/types.ts";
 import { errorMessage } from "../../lib/error-messages.ts";
 
 // The server's limits (see the task fields in the server domain).
 const TITLE_MAX = 200;
 const DESCRIPTION_MAX = 10_000;
-const STAGE_MAX = 50;
 
 export interface EditTaskValues {
   title: string;
   /** Blank means no description. */
   description: string;
-  /** Blank means no stage. */
+  /** One of the project's stages; blank means no stage. */
   stage: string;
 }
 
@@ -27,7 +26,7 @@ export const editTaskValues = (task: Pick<TaskDetail, "title" | "description" | 
   stage: task.stage ?? "",
 });
 
-/** The server's checks: a title of 1–200 characters after trimming, at most 10,000 for the description, 50 for the stage. */
+/** The server's checks: a title of 1–200 characters after trimming, at most 10,000 for the description. */
 export function validateEditTask(values: EditTaskValues): EditTaskErrors {
   const errors: EditTaskErrors = {};
   const title = values.title.trim();
@@ -36,7 +35,6 @@ export function validateEditTask(values: EditTaskValues): EditTaskErrors {
   if (values.description.length > DESCRIPTION_MAX) {
     errors.description = "Keep the description under 10,000 characters.";
   }
-  if (values.stage.trim().length > STAGE_MAX) errors.stage = "Keep the stage under 50 characters.";
   return errors;
 }
 
@@ -65,6 +63,7 @@ const FAILURE_FIELDS: Record<string, EditTaskField> = {
   invalid_task_title: "title",
   invalid_task_description: "description",
   invalid_task_stage: "stage",
+  invalid_stage: "stage",
 };
 
 export function editTaskFailure(error: unknown): EditTaskFailure {
@@ -76,10 +75,4 @@ export function editTaskFailure(error: unknown): EditTaskFailure {
 export function editTaskErrors(errors: EditTaskErrors, failure: EditTaskFailure | undefined): EditTaskErrors {
   if (failure?.field === undefined || errors[failure.field]) return errors;
   return { ...errors, [failure.field]: failure.message };
-}
-
-/** The stages already used on the board, sorted naturally ("Etapa 2" before "Etapa 10"). */
-export function stageSuggestions(tasks: readonly BoardTask[]): string[] {
-  const stages = new Set(tasks.flatMap((task) => (task.stage ? [task.stage] : [])));
-  return [...stages].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
 }

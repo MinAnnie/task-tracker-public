@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
-import { useBoard, useCreateTask, useCurrentUser, useParticipants, useProjects } from "../../api/queries.ts";
+import { useBoard, useCreateTask, useCurrentUser, useParticipants, useProjects, useStages } from "../../api/queries.ts";
 import { errorMessage } from "../../lib/error-messages.ts";
 import { paths } from "../../lib/paths.ts";
 import { Dialog } from "../../ui/Dialog.tsx";
@@ -18,6 +18,7 @@ export function NewTaskContainer() {
   const myLogin = useCurrentUser().data?.githubLogin ?? "";
   // Without the list (still loading, or failed), Unassigned and Me remain available.
   const participants = useParticipants(slug).data ?? [];
+  const stages = useStages(slug).data ?? [];
   const create = useCreateTask(slug);
   const [lastCreatedKey, setLastCreatedKey] = useState<string>();
 
@@ -37,6 +38,7 @@ export function NewTaskContainer() {
         projectName={project?.name ?? slug}
         nextKey={prefix ? nextTaskKey(prefix, (board.data ?? []).map((t) => t.key)) : "…"}
         assignees={assigneeOptions(myLogin, participants)}
+        stages={stages.map((stage) => stage.name)}
         submitting={create.isPending}
         error={create.isError ? errorMessage(create.error) : undefined}
         lastCreatedKey={lastCreatedKey}

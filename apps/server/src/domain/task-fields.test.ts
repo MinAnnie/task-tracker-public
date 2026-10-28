@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  findStage,
+  normalizeStageName,
   normalizeTaskDescription,
   normalizeTaskPriority,
   normalizeTaskStage,
@@ -90,5 +92,35 @@ describe("normalizeTaskStatus", () => {
 
   it.each([["DONE"], ["closed"], [""], [null], [1]])("rejects %j", (input) => {
     expect(normalizeTaskStatus(input)).toBeUndefined();
+  });
+});
+
+describe("normalizeStageName", () => {
+  it.each([
+    ["Backend", "Backend"],
+    ["  Etapa 2 ", "Etapa 2"],
+    ["x".repeat(50), "x".repeat(50)],
+  ])("accepts %j as %j", (input, expected) => {
+    expect(normalizeStageName(input)).toBe(expected);
+  });
+
+  it.each<[unknown]>([[""], ["   "], ["x".repeat(51)], [null], ...NON_STRINGS.map((v): [unknown] => [v])])("rejects %j", (input) => {
+    expect(normalizeStageName(input)).toBeUndefined();
+  });
+});
+
+describe("findStage", () => {
+  const stages = [
+    { id: 1, name: "Backend", position: 0 },
+    { id: 2, name: "Etapa 2", position: 1 },
+  ];
+
+  it("finds a stage by name, case-insensitively", () => {
+    expect(findStage(stages, "backend")).toBe(stages[0]);
+    expect(findStage(stages, "ETAPA 2")).toBe(stages[1]);
+  });
+
+  it("finds nothing for an unknown name", () => {
+    expect(findStage(stages, "Frontend")).toBeUndefined();
   });
 });

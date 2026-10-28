@@ -19,6 +19,8 @@ export {
   type TaskDependencyEdge,
 } from "./task-dependencies.ts";
 export {
+  findStage,
+  normalizeStageName,
   normalizeTaskDescription,
   normalizeTaskPriority,
   normalizeTaskStage,

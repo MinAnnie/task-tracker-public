@@ -8,6 +8,7 @@ import {
   useProjects,
   useReleaseTask,
   useRemoveDependency,
+  useStages,
   useTakeTask,
   useTask,
   useUpdateTask,
@@ -17,7 +18,7 @@ import { paths } from "../../lib/paths.ts";
 import { Alert } from "../../ui/Alert.tsx";
 import { StatusMessage } from "../../ui/StatusMessage.tsx";
 import { isProjectUnavailable, ProjectUnavailable } from "../projects/ProjectUnavailable.tsx";
-import { editTaskFailure, stageSuggestions } from "./edit-task-model.ts";
+import { editTaskFailure } from "./edit-task-model.ts";
 import { buildTaskPrompt } from "./task-prompt.ts";
 import { TaskDetailView } from "./TaskDetailView.tsx";
 
@@ -33,6 +34,7 @@ export function TaskDetailContainer() {
   const projectName = project?.name ?? slug;
   const participants = useParticipants(slug, { enabled: me?.role === "admin" });
   const board = useBoard(slug);
+  const stages = useStages(slug);
 
   const take = useTakeTask(slug);
   const release = useReleaseTask(slug);
@@ -108,7 +110,7 @@ export function TaskDetailContainer() {
         },
       }}
       edit={{
-        stages: stageSuggestions(board.data ?? []),
+        stages: (stages.data ?? []).map((stage) => stage.name),
         saving: edit.isPending,
         error: edit.isError ? editTaskFailure(edit.error) : undefined,
         onSave: (changes) => edit.mutateAsync(changes),

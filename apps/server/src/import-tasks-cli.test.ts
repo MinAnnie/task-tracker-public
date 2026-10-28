@@ -101,6 +101,17 @@ describe("runImportTasksCli", () => {
     ]);
   });
 
+  it("lists the stages it creates, on --dry-run and after importing", async () => {
+    deps.readFile = async () =>
+      JSON.stringify({ tasks: [{ ref: "a", title: "A", stage: "Etapa 0" }, { ref: "b", title: "B", stage: "Etapa 1" }] });
+    expect(await runImportTasksCli(["--project", "shop", "--dry-run", "tasks.json"], deps)).toBe(0);
+    expect(out).toContain("New stages: Etapa 0, Etapa 1");
+    out.length = 0;
+    expect(await runImportTasksCli(["--project", "shop", "tasks.json"], deps)).toBe(0);
+    expect(out).toContain("New stages: Etapa 0, Etapa 1");
+    expect(store.stages.map((s) => s.name)).toEqual(["Etapa 0", "Etapa 1"]);
+  });
+
   it("shows the count per status on --dry-run", async () => {
     deps.readFile = async () =>
       JSON.stringify({

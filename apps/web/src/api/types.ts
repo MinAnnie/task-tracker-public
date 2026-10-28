@@ -37,6 +37,20 @@ export interface Project {
   discordInviteUrl: string | null;
 }
 
+/** A stage of a project, in board order. */
+export interface Stage {
+  id: number;
+  name: string;
+  /** 0-based. */
+  position: number;
+}
+
+/** Admins only: a rename (its tasks follow) and/or a move to another 0-based position. */
+export interface StageChanges {
+  name?: string;
+  position?: number;
+}
+
 export interface TaskAssignee {
   login: string;
   name: string | null;

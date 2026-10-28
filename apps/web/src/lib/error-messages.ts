@@ -22,6 +22,11 @@ const MESSAGES: Record<string, string> = {
   invalid_task_title: "Give the task a title of up to 200 characters.",
   invalid_task_description: "The description can be at most 10,000 characters.",
   invalid_task_stage: "The stage can be at most 50 characters.",
+  invalid_stage: "That stage no longer exists in this project. Pick another one.",
+  invalid_stage_name: "Give the stage a name of up to 50 characters.",
+  invalid_stage_position: RELOAD,
+  stage_taken: "This project already has a stage with that name.",
+  stage_not_found: "That stage was already removed.",
   invalid_task_priority: "Pick one of the listed priorities.",
   invalid_task_status: "Pick one of the listed statuses.",
   invalid_task_key: "Enter a task key, like ABC-7.",
@@ -54,6 +59,11 @@ const MESSAGES: Record<string, string> = {
 
 export function errorMessage(error: unknown): string {
   if (!isApiError(error)) return GENERIC;
+  if (error.code === "stage_in_use") {
+    const count = error.taskCount ?? 0;
+    if (count === 0) return "Tasks are in this stage. Move them to another stage first.";
+    return `${count} ${count === 1 ? "task is" : "tasks are"} in this stage. Move ${count === 1 ? "it" : "them"} to another stage first.`;
+  }
   if (error.code === "dependencies_pending") {
     return error.pendingDependencies.length > 0
       ? `Finish its dependencies first: ${error.pendingDependencies.join(", ")}.`

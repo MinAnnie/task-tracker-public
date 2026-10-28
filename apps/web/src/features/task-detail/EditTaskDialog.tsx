@@ -19,7 +19,7 @@ import styles from "./EditTaskDialog.module.css";
 
 export interface EditTaskDialogProps {
   task: Pick<TaskDetail, "key" | "title" | "description" | "stage">;
-  /** Stages to suggest (those already used on the board). */
+  /** The project's stages, in board order. */
   stages: readonly string[];
   saving: boolean;
   /** Why the last save failed; shown on its field when one caused it. */
@@ -40,7 +40,7 @@ export function EditTaskDialog({ task, stages, saving, error, onSave, onDraftCha
   const refs = {
     title: useRef<HTMLInputElement>(null),
     description: useRef<HTMLTextAreaElement>(null),
-    stage: useRef<HTMLInputElement>(null),
+    stage: useRef<HTMLSelectElement>(null),
   };
 
   const set = (field: EditTaskField) => (value: string) => {
@@ -78,6 +78,8 @@ export function EditTaskDialog({ task, stages, saving, error, onSave, onDraftCha
     "aria-invalid": errors[field] ? true : undefined,
     "aria-describedby": errors[field] ? `${id}-${field}-error` : undefined,
   });
+  // A stage the project no longer lists stays selectable, so opening the dialog changes nothing.
+  const stageOptions = task.stage !== null && !stages.includes(task.stage) ? [...stages, task.stage] : stages;
   const fieldError = (field: EditTaskField) =>
     errors[field] && (
       <span id={`${id}-${field}-error`} role="alert" className={styles.error}>
@@ -118,15 +120,15 @@ export function EditTaskDialog({ task, stages, saving, error, onSave, onDraftCha
           </div>
 
           <div className={styles.field}>
-            <label htmlFor={`${id}-stage`}>
-              Stage <span className={styles.optional}>Optional</span>
-            </label>
-            <input {...fieldProps("stage")} ref={refs.stage} list={`${id}-stages`} className={styles.input} />
-            <datalist id={`${id}-stages`}>
-              {stages.map((stage) => (
-                <option key={stage} value={stage} />
+            <label htmlFor={`${id}-stage`}>Stage</label>
+            <select {...fieldProps("stage")} ref={refs.stage} className={styles.input}>
+              <option value="">No stage</option>
+              {stageOptions.map((stage) => (
+                <option key={stage} value={stage}>
+                  {stage}
+                </option>
               ))}
-            </datalist>
+            </select>
             {fieldError("stage")}
           </div>
         </div>

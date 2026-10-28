@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Outlet, useLocation, useNavigate, useParams } from "react-router";
-import { useBoard, useCurrentUser, useParticipants, useProjects, useTakeTask } from "../../api/queries.ts";
+import { useBoard, useCurrentUser, useParticipants, useProjects, useStages, useTakeTask } from "../../api/queries.ts";
 import type { TaskStatus } from "../../api/types.ts";
 import { errorMessage } from "../../lib/error-messages.ts";
 import { rememberLastProject } from "../../lib/last-project.ts";
@@ -19,6 +19,7 @@ export function BoardContainer() {
   // Until (or unless) they load, the assignee filter offers the people assigned on the board.
   const participants = useParticipants(slug).data;
   const projects = useProjects();
+  const projectStages = useStages(slug).data;
   const me = useCurrentUser().data?.githubLogin ?? "";
   const take = useTakeTask(slug);
   const location = useLocation();
@@ -30,7 +31,10 @@ export function BoardContainer() {
 
   const tasks = board.data;
   const columns = useMemo(() => groupByStatus(filterTasks(tasks ?? [], filters, me), filters.sort), [tasks, filters, me]);
-  const stages = useMemo(() => stageOptions(tasks ?? [], filters.stages), [tasks, filters.stages]);
+  const stages = useMemo(
+    () => stageOptions((projectStages ?? []).map((stage) => stage.name), tasks ?? [], filters.stages),
+    [projectStages, tasks, filters.stages],
+  );
   const assignees = useMemo(
     () => assigneeOptions(participants ?? [], tasks ?? [], me, filters.assignee),
     [participants, tasks, me, filters.assignee],

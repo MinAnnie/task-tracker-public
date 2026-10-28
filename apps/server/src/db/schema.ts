@@ -11,6 +11,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { API_TOKEN_PERMISSIONS } from "../domain/api-token.ts";
 import { TASK_PRIORITIES } from "../domain/task-priority.ts";
@@ -138,6 +139,28 @@ export const tasks = pgTable(
   (t) => [
     unique("tasks_project_id_key_unique").on(t.projectId, t.key),
     index("tasks_assignee_id_idx").on(t.assigneeId),
+  ],
+);
+
+/**
+ * The stages a project's tasks can be in, in board order. Tasks keep the stage name as
+ * text (no foreign key); the server only accepts names listed here, case-insensitively.
+ */
+export const projectStages = pgTable(
+  "project_stages",
+  {
+    id: serial("id").primaryKey(),
+    projectId: integer("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    /** 1–50 characters, trimmed. */
+    name: text("name").notNull(),
+    /** 0-based order within the project. */
+    position: integer("position").notNull(),
+  },
+  (t) => [
+    uniqueIndex("project_stages_project_id_name_unique").on(t.projectId, sql`lower(${t.name})`),
+    check("project_stages_name_length", sql`char_length(${t.name}) between 1 and 50`),
   ],
 );
 

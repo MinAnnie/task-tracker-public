@@ -37,6 +37,10 @@ function setup(overrides: Record<string, unknown> = {}, route = "/projects/app")
     "GET /auth/me": me,
     "GET /api/projects": projects,
     "GET /api/projects/app/tasks": tasks,
+    "GET /api/projects/app/stages": [
+      { id: 1, name: "Sprint 4", position: 0 },
+      { id: 2, name: "Sprint 3", position: 1 },
+    ],
     ...overrides,
   });
   const view = renderWithProviders(<BoardContainer />, { route, path: "/projects/:slug" });
@@ -298,15 +302,18 @@ describe("Board", () => {
     expect(cardKeys("To do")).toEqual(["RF-13", "RF-14", "RF-12"]);
   });
 
-  it("filters by several priorities and stages, offering the stages present plus 'No stage'", async () => {
+  it("filters by several priorities and stages, offering the project's stages in order plus 'No stage'", async () => {
     const { user } = setup();
     await screen.findByText("Export tasks to CSV");
     const toolbar = filterToolbar();
     const stages = within(toolbar).getByRole("group", { name: "Stage" });
-    expect(within(stages).getAllByRole("checkbox").map((c) => c.closest("label")?.textContent)).toEqual([
-      "Sprint 3",
-      "No stage",
-    ]);
+    await waitFor(() =>
+      expect(within(stages).getAllByRole("checkbox").map((c) => c.closest("label")?.textContent)).toEqual([
+        "Sprint 4",
+        "Sprint 3",
+        "No stage",
+      ]),
+    );
 
     await user.click(within(toolbar).getByRole("checkbox", { name: "High" }));
     await user.click(within(toolbar).getByRole("checkbox", { name: "Urgent" }));

@@ -1,5 +1,6 @@
 import type { TaskDependencyEdge, TaskPriority, TaskStatus } from "../domain/index.ts";
 import type { PullRequestState } from "./handle-pull-request-event.ts";
+import type { StageRecord } from "./stage-store.ts";
 
 /** The project fields task use cases need. */
 export interface TaskProjectRecord {
@@ -98,6 +99,10 @@ export interface TaskStore {
    */
   findUsersByGithubLogins(githubLogins: readonly string[]): Promise<TaskUserRecord[]>;
   listProjectTaskKeys(projectId: number): Promise<string[]>;
+  /** The project's stages ordered by position, then id. */
+  listProjectStages(projectId: number): Promise<StageRecord[]>;
+  /** Adds a stage to the project; the caller made sure the name is free (case-insensitively). */
+  insertProjectStage(projectId: number, name: string, position: number): Promise<void>;
   setNextTaskNumber(projectId: number, nextTaskNumber: number): Promise<void>;
   insertTask(task: NewTask): Promise<{ id: number }>;
   /** Every task of a project, in no particular order. */

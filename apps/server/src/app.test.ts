@@ -65,6 +65,11 @@ const makeApp = (overrides: Partial<AppDeps> = {}) =>
     listApiTokens: async () => ({ status: "project_not_found" }),
     createApiToken: async () => ({ status: "project_not_found" }),
     revokeApiToken: async () => ({ status: "project_not_found" }),
+    listProjectStages: async () => ({ status: "project_not_found" }),
+    listStages: async () => ({ status: "project_not_found" }),
+    createStage: async () => ({ status: "project_not_found" }),
+    updateStage: async () => ({ status: "project_not_found" }),
+    deleteStage: async () => ({ status: "project_not_found" }),
     ...overrides,
   });
 
@@ -1450,6 +1455,25 @@ describe("GET /api/projects/:slug/participants", () => {
   });
 });
 
+describe("GET /api/projects/:slug/stages", () => {
+  const stages = [{ id: 1, name: "Backend", position: 0 }];
+
+  it("returns the project's stages to a participant", async () => {
+    const list = vi.fn(async () => ({ status: "ok" as const, stages }));
+    const res = await adminRequest(makeApp({ ...asUser(member), listProjectStages: list }), "/api/projects/Shop/stages");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual(stages);
+    expect(list).toHaveBeenCalledWith(member, "Shop");
+  });
+
+  it("maps forbidden to 403", async () => {
+    const app = makeApp({ ...asUser(member), listProjectStages: async () => ({ status: "forbidden" }) });
+    const res = await adminRequest(app, "/api/projects/shop/stages");
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "forbidden" });
+  });
+});
+
 describe("GET /api/projects/:slug/tasks/:key", () => {
   it("returns the task", async () => {
     const get = vi.fn(async () => ({ status: "ok" as const, task: taskDetail }));
@@ -1485,6 +1509,7 @@ describe("POST /api/projects/:slug/tasks", () => {
     [{ status: "invalid", field: "description" }, { error: "invalid_task_description" }],
     [{ status: "invalid", field: "priority" }, { error: "invalid_task_priority" }],
     [{ status: "invalid", field: "stage" }, { error: "invalid_task_stage" }],
+    [{ status: "invalid_stage" }, { error: "invalid_stage" }],
     [{ status: "invalid_assignee" }, { error: "invalid_assignee" }],
   ] as const)("maps %j to 400", async (result, body) => {
     const res = await post(makeApp({ ...asUser(member), createTask: async () => result }), "{}");
@@ -1569,6 +1594,7 @@ describe("PATCH /api/projects/:slug/tasks/:key", () => {
     [{ status: "invalid", field: "status" }, 400, { error: "invalid_task_status" }],
     [{ status: "empty_update" }, 400, { error: "empty_update" }],
     [{ status: "invalid_assignee" }, 400, { error: "invalid_assignee" }],
+    [{ status: "invalid_stage" }, 400, { error: "invalid_stage" }],
     [{ status: "task_not_found" }, 404, { error: "task_not_found" }],
     [
       { status: "dependencies_pending", pendingDependencies: ["RF-2"] },
@@ -1803,6 +1829,7 @@ const bearerRequest = (
 
 const tokenReadRoutes = [
   "/api/projects",
+  "/api/projects/shop/stages",
   "/api/projects/shop/tasks",
   "/api/projects/shop/tasks/RF-1",
   "/api/projects/shop/participants",
@@ -1879,6 +1906,15 @@ describe("API token (bearer) authentication", () => {
     for (const spy of Object.values(spies)) expect(spy).not.toHaveBeenCalled();
   });
 
+  it("reads the project's stages with a token", async () => {
+    const stages = [{ id: 1, name: "Backend", position: 0 }];
+    const listProjectStages = vi.fn(async () => ({ status: "ok" as const, stages }));
+    const res = await bearerRequest(makeApp({ ...withToken(), listProjectStages }), "/api/projects/shop/stages");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual(stages);
+    expect(listProjectStages).toHaveBeenCalledWith(tokenCaller, "shop");
+  });
+
   it("returns the same 401 when the use case rejects a revoked or expired token", async () => {
     const app = makeApp({ authenticateApiToken: async () => undefined });
     const res = await bearerRequest(app, "/api/projects/shop/tasks");
@@ -1892,6 +1928,7 @@ describe("API token (bearer) authentication", () => {
     ["DELETE", "/api/admin/projects/shop", undefined],
     ["POST", "/api/admin/projects/shop/tokens", JSON.stringify({ name: "x" })],
     ["DELETE", "/api/admin/projects/shop/tokens/1", undefined],
+    ["POST", "/api/admin/projects/shop/stages", JSON.stringify({ name: "x" })],
     ["POST", "/auth/logout", undefined],
     ["DELETE", "/auth/discord", undefined],
   ] as const)("%s %s returns 403 with a bearer token, even with an admin session", async (method, path, body) => {
@@ -1912,6 +1949,7 @@ describe("API token (bearer) authentication", () => {
     "/api/admin/projects",
     "/api/admin/projects/shop",
     "/api/admin/projects/shop/tokens",
+    "/api/admin/projects/shop/stages",
   ])("GET %s returns 403 with a bearer token, with or without a session", async (path) => {
     const spies = adminSpies();
     for (const cookie of [false, true]) {
@@ -2068,6 +2106,114 @@ describe("DELETE /api/admin/projects/:slug/tokens/:id", () => {
 
   it.each(["project_not_found", "token_not_found"] as const)("maps %s to 404", async (status) => {
     const res = await revoke(makeApp({ ...asUser(admin), revokeApiToken: async () => ({ status }) }));
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: status });
+  });
+});
+
+const stage = { id: 7, name: "Backend", position: 0 };
+
+describe("GET /api/admin/projects/:slug/stages", () => {
+  it("lists the project's stages", async () => {
+    const list = vi.fn(async () => ({ status: "ok" as const, stages: [stage] }));
+    const res = await adminRequest(makeApp({ ...asUser(admin), listStages: list }), "/api/admin/projects/Shop/stages");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual([stage]);
+    expect(list).toHaveBeenCalledWith("Shop");
+  });
+
+  it("is for admins only", async () => {
+    const list = vi.fn();
+    const res = await adminRequest(makeApp({ ...asUser(member), listStages: list }), "/api/admin/projects/shop/stages");
+    expect(res.status).toBe(403);
+    expect(list).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 for an unknown project", async () => {
+    const res = await adminRequest(makeApp(asUser(admin)), "/api/admin/projects/ghost/stages");
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "project_not_found" });
+  });
+});
+
+describe("POST /api/admin/projects/:slug/stages", () => {
+  const post = (app: ReturnType<typeof makeApp>, body: string) =>
+    adminRequest(app, "/api/admin/projects/shop/stages", { method: "POST", body });
+
+  it("creates the stage and returns 201", async () => {
+    const create = vi.fn(async () => ({ status: "created" as const, stage }));
+    const res = await post(makeApp({ ...asUser(admin), createStage: create }), JSON.stringify({ name: "Backend" }));
+    expect(res.status).toBe(201);
+    expect(await res.json()).toEqual(stage);
+    expect(create).toHaveBeenCalledWith("shop", { name: "Backend" });
+  });
+
+  it.each([
+    [{ status: "invalid", field: "name" }, 400, { error: "invalid_stage_name" }],
+    [{ status: "stage_taken" }, 409, { error: "stage_taken" }],
+    [{ status: "project_not_found" }, 404, { error: "project_not_found" }],
+  ] as const)("maps %j to %i", async (result, status, body) => {
+    const res = await post(makeApp({ ...asUser(admin), createStage: async () => result }), "{}");
+    expect(res.status).toBe(status);
+    expect(await res.json()).toEqual(body);
+  });
+
+  it("returns 400 for malformed JSON", async () => {
+    const create = vi.fn();
+    const res = await post(makeApp({ ...asUser(admin), createStage: create }), "{");
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "malformed_json" });
+    expect(create).not.toHaveBeenCalled();
+  });
+});
+
+describe("PATCH /api/admin/projects/:slug/stages/:id", () => {
+  const patch = (app: ReturnType<typeof makeApp>, body: string) =>
+    adminRequest(app, "/api/admin/projects/shop/stages/7", { method: "PATCH", body });
+
+  it("updates the stage and returns it", async () => {
+    const update = vi.fn(async () => ({ status: "ok" as const, stage }));
+    const res = await patch(makeApp({ ...asUser(admin), updateStage: update }), JSON.stringify({ position: 0 }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual(stage);
+    expect(update).toHaveBeenCalledWith("shop", "7", { position: 0 });
+  });
+
+  it.each([
+    [{ status: "invalid", field: "body" }, 400, { error: "invalid_body" }],
+    [{ status: "invalid", field: "name" }, 400, { error: "invalid_stage_name" }],
+    [{ status: "invalid", field: "position" }, 400, { error: "invalid_stage_position" }],
+    [{ status: "empty_update" }, 400, { error: "empty_update" }],
+    [{ status: "stage_taken" }, 409, { error: "stage_taken" }],
+    [{ status: "stage_not_found" }, 404, { error: "stage_not_found" }],
+    [{ status: "project_not_found" }, 404, { error: "project_not_found" }],
+  ] as const)("maps %j to %i", async (result, status, body) => {
+    const res = await patch(makeApp({ ...asUser(admin), updateStage: async () => result }), "{}");
+    expect(res.status).toBe(status);
+    expect(await res.json()).toEqual(body);
+  });
+});
+
+describe("DELETE /api/admin/projects/:slug/stages/:id", () => {
+  const remove = (app: ReturnType<typeof makeApp>) =>
+    adminRequest(app, "/api/admin/projects/shop/stages/7", { method: "DELETE" });
+
+  it("deletes the stage and returns 204", async () => {
+    const spy = vi.fn(async () => ({ status: "deleted" as const }));
+    const res = await remove(makeApp({ ...asUser(admin), deleteStage: spy }));
+    expect(res.status).toBe(204);
+    expect(spy).toHaveBeenCalledWith("shop", "7");
+  });
+
+  it("returns 409 with the task count when tasks use the stage", async () => {
+    const app = makeApp({ ...asUser(admin), deleteStage: async () => ({ status: "stage_in_use", taskCount: 3 }) });
+    const res = await remove(app);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "stage_in_use", taskCount: 3 });
+  });
+
+  it.each(["project_not_found", "stage_not_found"] as const)("maps %s to 404", async (status) => {
+    const res = await remove(makeApp({ ...asUser(admin), deleteStage: async () => ({ status }) }));
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: status });
   });

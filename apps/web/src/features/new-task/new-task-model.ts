@@ -8,6 +8,7 @@ export interface NewTaskValues {
   description: string;
   /** Login of the assignee; empty for unassigned. */
   assignee: string;
+  /** One of the project's stages; empty for none. */
   stage: string;
 }
 

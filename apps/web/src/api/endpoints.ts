@@ -17,6 +17,8 @@ import type {
   ProjectChanges,
   ProjectMember,
   ProjectRepository,
+  Stage,
+  StageChanges,
   TaskChanges,
   TaskDetail,
   TaskLink,
@@ -72,6 +74,8 @@ export const removeDependency = (slug: string, key: string, dependsOnKey: string
 /** Admins only. */
 export const deleteTask = (slug: string, key: string) => apiRequest<void>(taskPath(slug, key), { method: "DELETE" });
 
+export const fetchStages = (slug: string) => apiRequest<Stage[]>(`/api/projects/${encodeURIComponent(slug)}/stages`);
+
 export const fetchParticipants = (slug: string) =>
   apiRequest<Participant[]>(`/api/projects/${encodeURIComponent(slug)}/participants`);
 
@@ -120,3 +124,14 @@ export const createApiToken = (slug: string, input: NewApiTokenInput) =>
 
 export const revokeApiToken = (slug: string, id: number) =>
   apiRequest<void>(`${adminProjectPath(slug)}/tokens/${id}`, { method: "DELETE" });
+
+export const fetchAdminStages = (slug: string) => apiRequest<Stage[]>(`${adminProjectPath(slug)}/stages`);
+
+export const createStage = (slug: string, name: string) =>
+  apiRequest<Stage>(`${adminProjectPath(slug)}/stages`, { method: "POST", body: { name } });
+
+export const updateStage = (slug: string, id: number, changes: StageChanges) =>
+  apiRequest<Stage>(`${adminProjectPath(slug)}/stages/${id}`, { method: "PATCH", body: changes });
+
+export const deleteStage = (slug: string, id: number) =>
+  apiRequest<void>(`${adminProjectPath(slug)}/stages/${id}`, { method: "DELETE" });

@@ -35,6 +35,19 @@ export function normalizeTaskStage(value: unknown): string | null | undefined {
   return stage.length === 0 ? null : stage;
 }
 
+/** Returns the trimmed name of a project stage when it has 1–50 characters, `undefined` otherwise. */
+export function normalizeStageName(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const name = value.trim();
+  return name.length >= 1 && name.length <= TASK_STAGE_MAX_LENGTH ? name : undefined;
+}
+
+/** The stage named `name`, compared case-insensitively (stage names are unique that way). */
+export function findStage<T extends { name: string }>(stages: readonly T[], name: string): T | undefined {
+  const wanted = name.toLowerCase();
+  return stages.find((stage) => stage.name.toLowerCase() === wanted);
+}
+
 export function normalizeTaskPriority(value: unknown): TaskPriority | undefined {
   return TASK_PRIORITIES.find((priority) => priority === value);
 }

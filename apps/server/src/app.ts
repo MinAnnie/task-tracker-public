@@ -35,11 +35,19 @@ import type {
 } from "./application/projects.ts";
 import type { AuthenticatedUser } from "./application/sessions.ts";
 import type {
+  CreateStageResult,
+  DeleteStageResult,
+  ListStagesResult,
+  StageField,
+  UpdateStageResult,
+} from "./application/stages.ts";
+import type {
   AddTaskDependencyResult,
   CreateTaskResult,
   DeleteTaskResult,
   GetTaskResult,
   ListParticipantsResult,
+  ListProjectStagesResult,
   ListTasksResult,
   ReleaseTaskResult,
   RemoveTaskDependencyResult,
@@ -149,12 +157,23 @@ export interface AppDeps {
   createApiToken: (slug: string, body: unknown, actor: AuthenticatedUser) => Promise<CreateApiTokenResult>;
   /** Revokes a token; `tokenId` is the untrusted path segment. */
   revokeApiToken: (slug: string, tokenId: string) => Promise<RevokeApiTokenResult>;
+  /** The stages of a project the user (or API token) participates in. */
+  listProjectStages: (viewer: TaskViewer, slug: string) => Promise<ListProjectStagesResult>;
+  /** The stages of a project (admin view). */
+  listStages: (slug: string) => Promise<ListStagesResult>;
+  /** Appends a stage; `body` is the untrusted parsed request body. */
+  createStage: (slug: string, body: unknown) => Promise<CreateStageResult>;
+  /** Renames and/or moves a stage; `stageId` and `body` are untrusted. */
+  updateStage: (slug: string, stageId: string, body: unknown) => Promise<UpdateStageResult>;
+  /** Deletes a stage no task uses; `stageId` is the untrusted path segment. */
+  deleteStage: (slug: string, stageId: string) => Promise<DeleteStageResult>;
 }
 
 /** Every unsuccessful outcome of a task use case. */
 type TaskFailure = Exclude<
   | ListTasksResult
   | ListParticipantsResult
+  | ListProjectStagesResult
   | GetTaskResult
   | CreateTaskResult
   | TakeTaskResult
@@ -190,6 +209,12 @@ const INVALID_FIELD_ERRORS: Record<ProjectField, string> = {
   discordInviteUrl: "invalid_discord_invite_url",
 };
 
+const INVALID_STAGE_FIELD_ERRORS: Record<StageField, string> = {
+  body: "invalid_body",
+  name: "invalid_stage_name",
+  position: "invalid_stage_position",
+};
+
 const INVALID_TASK_FIELD_ERRORS: Record<TaskField, string> = {
   body: "invalid_body",
   title: "invalid_task_title",
@@ -206,6 +231,7 @@ const TASK_FAILURE_STATUS = {
   dependency_not_found: 404,
   forbidden: 403,
   invalid_assignee: 400,
+  invalid_stage: 400,
   empty_update: 400,
   self_dependency: 400,
   task_taken: 409,
@@ -321,6 +347,11 @@ export function createApp({
   listApiTokens,
   createApiToken,
   revokeApiToken,
+  listProjectStages,
+  listStages,
+  createStage,
+  updateStage,
+  deleteStage,
 }: AppDeps): Hono {
   const app = new Hono();
   const callbackUrl = new URL("/auth/github/callback", appBaseUrl).toString();
@@ -780,6 +811,62 @@ export function createApp({
     return c.body(null, 204);
   });
 
+  admin.get("/projects/:slug/stages", async (c) => {
+    const result = await listStages(c.req.param("slug"));
+    if (result.status === "project_not_found") return c.json({ error: "project_not_found" }, 404);
+    return c.json(result.stages);
+  });
+
+  admin.post("/projects/:slug/stages", async (c) => {
+    const parsed = await readJsonBody(c);
+    if (!parsed.ok) return c.json({ error: "malformed_json" }, 400);
+
+    const result = await createStage(c.req.param("slug"), parsed.body);
+    switch (result.status) {
+      case "created":
+        return c.json(result.stage, 201);
+      case "invalid":
+        return c.json({ error: INVALID_STAGE_FIELD_ERRORS[result.field] }, 400);
+      case "stage_taken":
+        return c.json({ error: "stage_taken" }, 409);
+      case "project_not_found":
+        return c.json({ error: "project_not_found" }, 404);
+    }
+  });
+
+  admin.patch("/projects/:slug/stages/:id", async (c) => {
+    const parsed = await readJsonBody(c);
+    if (!parsed.ok) return c.json({ error: "malformed_json" }, 400);
+
+    const result = await updateStage(c.req.param("slug"), c.req.param("id"), parsed.body);
+    switch (result.status) {
+      case "ok":
+        return c.json(result.stage);
+      case "invalid":
+        return c.json({ error: INVALID_STAGE_FIELD_ERRORS[result.field] }, 400);
+      case "empty_update":
+        return c.json({ error: "empty_update" }, 400);
+      case "stage_taken":
+        return c.json({ error: "stage_taken" }, 409);
+      case "project_not_found":
+      case "stage_not_found":
+        return c.json({ error: result.status }, 404);
+    }
+  });
+
+  admin.delete("/projects/:slug/stages/:id", async (c) => {
+    const result = await deleteStage(c.req.param("slug"), c.req.param("id"));
+    switch (result.status) {
+      case "deleted":
+        return c.body(null, 204);
+      case "stage_in_use":
+        return c.json({ error: "stage_in_use", taskCount: result.taskCount }, 409);
+      case "project_not_found":
+      case "stage_not_found":
+        return c.json({ error: result.status }, 404);
+    }
+  });
+
   app.route("/api/admin", admin);
 
   // Public, so agents can discover the token-readable endpoints.
@@ -865,6 +952,12 @@ export function createApp({
   app.get("/api/projects/:slug/participants", requireViewer, async (c) => {
     const result = await listParticipants(c.get("viewer"), c.req.param("slug"));
     return result.status === "ok" ? c.json(result.participants) : taskFailure(c, result);
+  });
+
+  // Same access rules as the tasks routes; API tokens may read it too.
+  app.get("/api/projects/:slug/stages", requireViewer, async (c) => {
+    const result = await listProjectStages(c.get("viewer"), c.req.param("slug"));
+    return result.status === "ok" ? c.json(result.stages) : taskFailure(c, result);
   });
 
   if (webDistDir !== undefined && existsSync(webDistDir)) {

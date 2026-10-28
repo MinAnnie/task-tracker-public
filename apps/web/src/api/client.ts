@@ -4,13 +4,16 @@ export class ApiError extends Error {
   readonly code: string;
   /** Keys of unfinished dependencies, sent with `dependencies_pending`. */
   readonly pendingDependencies: readonly string[];
+  /** How many tasks still use a stage, sent with `stage_in_use`. */
+  readonly taskCount: number | undefined;
 
-  constructor(status: number, code: string, pendingDependencies: readonly string[] = []) {
+  constructor(status: number, code: string, pendingDependencies: readonly string[] = [], taskCount?: number) {
     super(`API error ${status}: ${code}`);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
     this.pendingDependencies = pendingDependencies;
+    this.taskCount = taskCount;
   }
 }
 
@@ -21,14 +24,17 @@ export interface RequestOptions {
   body?: unknown;
 }
 
-async function readErrorBody(response: Response): Promise<{ code: string; pending: string[] }> {
+async function readErrorBody(
+  response: Response,
+): Promise<{ code: string; pending: string[]; taskCount?: number }> {
   try {
     const body: unknown = await response.json();
     if (typeof body === "object" && body !== null) {
-      const { error, pendingDependencies } = body as Record<string, unknown>;
+      const { error, pendingDependencies, taskCount } = body as Record<string, unknown>;
       return {
         code: typeof error === "string" ? error : "unknown_error",
         pending: Array.isArray(pendingDependencies) ? pendingDependencies.map(String) : [],
+        ...(typeof taskCount === "number" ? { taskCount } : {}),
       };
     }
   } catch {
@@ -56,8 +62,8 @@ export async function apiRequest<T>(path: string, { method = "GET", body }: Requ
   }
 
   if (!response.ok) {
-    const { code, pending } = await readErrorBody(response);
-    throw new ApiError(response.status, code, pending);
+    const { code, pending, taskCount } = await readErrorBody(response);
+    throw new ApiError(response.status, code, pending, taskCount);
   }
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;

@@ -2,7 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { AppRoutes } from "../../app/AppRoutes.tsx";
-import type { AdminProjectDetail, ApiToken } from "../../api/types.ts";
+import type { AdminProjectDetail, ApiToken, Stage } from "../../api/types.ts";
 import { admin, adminProjectDetail, adminProjects, membersOverview, projects } from "../../test/fixtures.ts";
 import { fakeApi, renderRoutes, reply } from "../../test/render.tsx";
 
@@ -23,6 +23,37 @@ const apiToken = (overrides: Partial<ApiToken> = {}): ApiToken => ({
   status: "active",
   ...overrides,
 });
+
+/** Admin stage routes over an in-memory list, renumbering positions like the server. */
+function stageRoutes(initial: string[]) {
+  let stages: Stage[] = initial.map((name, position) => ({ id: position + 1, name, position }));
+  const renumber = (list: Stage[]) => (stages = list.map((stage, position) => ({ ...stage, position })));
+  const routes: Record<string, unknown> = {
+    "GET /api/admin/projects/app/stages": () => stages,
+    "POST /api/admin/projects/app/stages": ({ body }: { body: unknown }) => {
+      const stage = { id: stages.length + 10, name: (body as { name: string }).name, position: stages.length };
+      stages = [...stages, stage];
+      return reply(201, stage);
+    },
+  };
+  for (const id of initial.keys()) {
+    const stageId = id + 1;
+    routes[`PATCH /api/admin/projects/app/stages/${stageId}`] = ({ body }: { body: unknown }) => {
+      const { name, position } = body as { name?: string; position?: number };
+      const stage = stages.find((s) => s.id === stageId)!;
+      const renamed = { ...stage, name: name ?? stage.name };
+      const others = stages.filter((s) => s.id !== stageId);
+      const at = position ?? stages.indexOf(stage);
+      renumber([...others.slice(0, at), renamed, ...others.slice(at)]);
+      return stages.find((s) => s.id === stageId);
+    };
+    routes[`DELETE /api/admin/projects/app/stages/${stageId}`] = () => {
+      renumber(stages.filter((s) => s.id !== stageId));
+      return reply(204);
+    };
+  }
+  return routes;
+}
 
 function setup(overrides: Record<string, unknown> = {}) {
   let detail: AdminProjectDetail = adminProjectDetail();
@@ -80,6 +111,7 @@ function setup(overrides: Record<string, unknown> = {}) {
       tokens = tokens.map((t) => (t.id === 1 ? { ...t, status: "revoked", revokedAt: "2026-10-10T10:00:00.000Z" } : t));
       return reply(204);
     },
+    ...stageRoutes(["Backend", "Frontend", "QA"]),
     ...overrides,
   });
   return { api, ...renderRoutes(<AppRoutes />, "/admin/projects/app"), user: userEvent.setup() };
@@ -315,6 +347,91 @@ describe("Project settings", () => {
       await user.click(within(section).getByRole("button", { name: "Copy webhook URL" }));
       expect(await navigator.clipboard.readText()).toBe(url);
       expect(await within(section).findByText("Copied")).toBeInTheDocument();
+    });
+  });
+
+  describe("Stages", () => {
+    const section = () => screen.findByRole("region", { name: "Stages" });
+    const stageNames = (region: HTMLElement) =>
+      within(within(region).getByRole("list")).getAllByRole("listitem").map((item) => item.querySelector("[data-stage-name]")?.textContent);
+
+    it("lists the stages in order and adds one at the end", async () => {
+      const { api, user } = setup();
+      const region = await section();
+      await waitFor(() => expect(stageNames(region)).toEqual(["Backend", "Frontend", "QA"]));
+
+      await user.type(within(region).getByRole("textbox", { name: "Add stage" }), "  Done ");
+      await user.click(within(region).getByRole("button", { name: "Add" }));
+
+      await waitFor(() =>
+        expect(api.calls).toContainEqual({ route: "POST /api/admin/projects/app/stages", body: { name: "Done" } }),
+      );
+      await waitFor(() => expect(stageNames(region)).toEqual(["Backend", "Frontend", "QA", "Done"]));
+      expect(within(region).getByRole("textbox", { name: "Add stage" })).toHaveValue("");
+    });
+
+    it("checks the name before sending it", async () => {
+      const { api, user } = setup();
+      const region = await section();
+      await user.click(within(region).getByRole("button", { name: "Add" }));
+      expect(await within(region).findByRole("alert")).toHaveTextContent("Give the stage a name of up to 50 characters.");
+      expect(api.calls.map((c) => c.route)).not.toContain("POST /api/admin/projects/app/stages");
+    });
+
+    it("shows the server's refusal", async () => {
+      const { user } = setup({ "POST /api/admin/projects/app/stages": reply(409, { error: "stage_taken" }) });
+      const region = await section();
+      await user.type(within(region).getByRole("textbox", { name: "Add stage" }), "qa");
+      await user.click(within(region).getByRole("button", { name: "Add" }));
+      expect(await within(region).findByRole("alert")).toHaveTextContent("This project already has a stage with that name.");
+    });
+
+    it("moves stages up and down, the ends disabled", async () => {
+      const { api, user } = setup();
+      const region = await section();
+      await waitFor(() => expect(stageNames(region)).toEqual(["Backend", "Frontend", "QA"]));
+      expect(within(region).getByRole("button", { name: "Move Backend up" })).toBeDisabled();
+      expect(within(region).getByRole("button", { name: "Move QA down" })).toBeDisabled();
+
+      await user.click(within(region).getByRole("button", { name: "Move QA up" }));
+      await waitFor(() => expect(stageNames(region)).toEqual(["Backend", "QA", "Frontend"]));
+      expect(api.calls).toContainEqual({ route: "PATCH /api/admin/projects/app/stages/3", body: { position: 1 } });
+
+      await user.click(within(region).getByRole("button", { name: "Move Backend down" }));
+      await waitFor(() => expect(stageNames(region)).toEqual(["QA", "Backend", "Frontend"]));
+      expect(api.calls).toContainEqual({ route: "PATCH /api/admin/projects/app/stages/1", body: { position: 1 } });
+    });
+
+    it("renames a stage", async () => {
+      const { api, user } = setup();
+      const region = await section();
+      await user.click(await within(region).findByRole("button", { name: "Rename Frontend" }));
+      const input = within(region).getByRole("textbox", { name: "New name for Frontend" });
+      expect(input).toHaveValue("Frontend");
+      expect(input).toHaveFocus();
+      await user.clear(input);
+      await user.type(input, "Web");
+      await user.click(within(region).getByRole("button", { name: "Save" }));
+
+      await waitFor(() =>
+        expect(api.calls).toContainEqual({ route: "PATCH /api/admin/projects/app/stages/2", body: { name: "Web" } }),
+      );
+      await waitFor(() => expect(stageNames(region)).toEqual(["Backend", "Web", "QA"]));
+    });
+
+    it("deletes an unused stage and explains why a used one stays", async () => {
+      const { api, user } = setup({
+        "DELETE /api/admin/projects/app/stages/2": reply(409, { error: "stage_in_use", taskCount: 3 }),
+      });
+      const region = await section();
+      await user.click(await within(region).findByRole("button", { name: "Delete Frontend" }));
+      expect(await within(region).findByRole("alert")).toHaveTextContent(
+        "3 tasks are in this stage. Move them to another stage first.",
+      );
+
+      await user.click(within(region).getByRole("button", { name: "Delete QA" }));
+      await waitFor(() => expect(stageNames(region)).toEqual(["Backend", "Frontend"]));
+      expect(api.calls.map((c) => c.route)).toContain("DELETE /api/admin/projects/app/stages/3");
     });
   });
 

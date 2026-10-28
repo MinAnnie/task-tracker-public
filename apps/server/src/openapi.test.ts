@@ -3,7 +3,7 @@ import { InMemoryTaskStore } from "../test/fakes/in-memory-task-store.ts";
 import { RecordingNotifications } from "../test/fakes/recording-notifications.ts";
 import { createApp, type AppDeps } from "./app.ts";
 import type { ApiTokenCaller } from "./application/api-tokens.ts";
-import { getTask, listParticipants, listTasks, type TasksDeps } from "./application/tasks.ts";
+import { getTask, listParticipants, listProjectStages, listTasks, type TasksDeps } from "./application/tasks.ts";
 import { openApiDocument } from "./openapi.ts";
 
 type Schema = Record<string, unknown>;
@@ -112,6 +112,7 @@ describe("OpenAPI document", () => {
       },
     );
     store.dependencies.push({ taskId: 2, dependsOnTaskId: 1 });
+    store.stages.push({ id: 1, projectId: 3, name: "Backend", position: 0 });
     store.pullRequests.push({
       taskId: 1,
       number: 7,
@@ -169,6 +170,11 @@ describe("OpenAPI document", () => {
       listApiTokens: unused,
       createApiToken: unused,
       revokeApiToken: unused,
+      listProjectStages: (viewer, slug) => listProjectStages(tasksDeps, viewer, slug),
+      listStages: unused,
+      createStage: unused,
+      updateStage: unused,
+      deleteStage: unused,
     } satisfies AppDeps);
   });
 
@@ -207,6 +213,13 @@ describe("OpenAPI document", () => {
     const { status, body } = await get("/api/projects/shop/participants");
     expect(status).toBe(200);
     expect(validate(responseSchema("/api/projects/{slug}/participants", "200"), body)).toEqual([]);
+  });
+
+  it("describes the real stages", async () => {
+    const { status, body } = await get("/api/projects/shop/stages");
+    expect(status).toBe(200);
+    expect(body).toHaveLength(1);
+    expect(validate(responseSchema("/api/projects/{slug}/stages", "200"), body)).toEqual([]);
   });
 
   it("describes the real errors", async () => {

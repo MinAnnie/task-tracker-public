@@ -8,6 +8,7 @@ import type {
   TaskStore,
   TaskUserRecord,
 } from "../../src/application/task-store.ts";
+import type { StageRecord } from "../../src/application/stage-store.ts";
 import {
   compareTaskKeys,
   isDependencyPending,
@@ -44,6 +45,7 @@ export class InMemoryTaskStore implements TaskStore {
   tasks: StoredTask[] = [];
   dependencies: TaskDependencyEdge[] = [];
   pullRequests: TaskPullRequestRecord[] = [];
+  stages: (StageRecord & { projectId: number })[] = [];
   transactions = 0;
   /** Slugs locked through `findProjectBySlug(slug, { lock: true })`. */
   projectLocks: string[] = [];
@@ -89,6 +91,19 @@ export class InMemoryTaskStore implements TaskStore {
 
   async listProjectTaskKeys(projectId: number) {
     return this.tasks.filter((t) => t.projectId === projectId).map((t) => t.key);
+  }
+
+  async listProjectStages(projectId: number): Promise<StageRecord[]> {
+    return this.stages
+      .filter((s) => s.projectId === projectId)
+      .sort((a, b) => a.position - b.position || a.id - b.id)
+      .map(({ id, name, position }) => ({ id, name, position }));
+  }
+
+  async insertProjectStage(projectId: number, name: string, position: number) {
+    const taken = this.stages.some((s) => s.projectId === projectId && s.name.toLowerCase() === name.toLowerCase());
+    if (taken) throw new Error("duplicate key value violates unique constraint project_stages_project_id_name_unique");
+    this.stages.push({ id: this.nextId++, projectId, name, position });
   }
 
   async setNextTaskNumber(projectId: number, nextTaskNumber: number) {

@@ -34,7 +34,7 @@ const UNIQUE_FIELDS: Record<string, "slug" | "taskKeyPrefix"> = {
 };
 
 /** Name of the violated constraint when `error` (or its cause) is a Postgres unique violation. */
-function uniqueViolation(error: unknown): string | undefined {
+export function uniqueViolation(error: unknown): string | undefined {
   for (let current = error; typeof current === "object" && current !== null; ) {
     const { code, constraint_name: constraint, cause } = current as {
       code?: unknown;

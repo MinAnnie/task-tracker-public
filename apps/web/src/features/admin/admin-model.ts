@@ -36,6 +36,16 @@ export function parseRepositoryName(raw: string): { fullName: string } | { error
   return valid ? { fullName: value } : { error: INVALID_REPOSITORY };
 }
 
+const STAGE_NAME_MAX = 50;
+
+/** The server's stage name rule: 1–50 characters once trimmed. */
+export function parseStageName(raw: string): { name: string } | { error: string } {
+  const name = raw.trim();
+  return name.length >= 1 && name.length <= STAGE_NAME_MAX
+    ? { name }
+    : { error: "Give the stage a name of up to 50 characters." };
+}
+
 /** Letter-and-digit words of a name, accents removed. */
 const words = (name: string) =>
   name

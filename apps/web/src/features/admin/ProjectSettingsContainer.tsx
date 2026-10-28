@@ -24,6 +24,7 @@ import { ApiTokensContainer } from "./ApiTokensContainer.tsx";
 import { GeneralForm } from "./GeneralForm.tsx";
 import { ProjectMembersSection } from "./ProjectMembersSection.tsx";
 import { RepositoriesSection } from "./RepositoriesSection.tsx";
+import { StagesContainer } from "./StagesContainer.tsx";
 
 const failure = (mutation: { isError: boolean; error: unknown }) =>
   mutation.isError ? errorMessage(mutation.error) : undefined;
@@ -104,6 +105,8 @@ function ProjectSettings({ project }: { project: AdminProjectDetail }) {
           if (update.isError) update.reset();
         }}
       />
+
+      <StagesContainer slug={slug} />
 
       <ProjectMembersSection
         members={project.members}

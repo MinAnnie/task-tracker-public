@@ -75,6 +75,10 @@ describe("New task", () => {
       "GET /auth/me": me,
       "GET /api/projects": projects,
       "GET /api/projects/app/tasks": [boardTask({ key: "RF-12" })],
+      "GET /api/projects/app/stages": [
+        { id: 1, name: "Sprint 3", position: 0 },
+        { id: 2, name: "Sprint 4", position: 1 },
+      ],
       "POST /api/projects/app/tasks": reply(201, created),
       "GET /api/projects/app/participants": [
         { login: "zoe", name: "Zoe Q", avatarUrl: null },
@@ -134,7 +138,12 @@ describe("New task", () => {
     // The board behind the dialog has its own Assignee filter.
     const dialog = screen.getByRole("dialog", { name: "New task" });
     await user.selectOptions(within(dialog).getByRole("combobox", { name: "Assignee" }), "Me (@annamiller)");
-    await user.type(screen.getByRole("textbox", { name: /Stage/ }), "Sprint 3");
+    const stage = within(dialog).getByRole("combobox", { name: "Stage" });
+    await waitFor(() =>
+      expect([...stage.querySelectorAll("option")].map((o) => o.textContent)).toEqual(["No stage", "Sprint 3", "Sprint 4"]),
+    );
+    expect(stage).toHaveValue("");
+    await user.selectOptions(stage, "Sprint 3");
     await user.click(screen.getByRole("button", { name: "Create task" }));
 
     await waitFor(() =>
@@ -205,10 +214,12 @@ describe("New task", () => {
   });
 
   it("shows the server's reason when creation fails", async () => {
-    const { user } = setup({ "POST /api/projects/app/tasks": reply(400, { error: "invalid_task_stage" }) });
+    const { user } = setup({ "POST /api/projects/app/tasks": reply(400, { error: "invalid_stage" }) });
     await user.type(await screen.findByRole("textbox", { name: "Title" }), "Ship it");
     await user.click(screen.getByRole("button", { name: "Create task" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("The stage can be at most 50 characters.");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "That stage no longer exists in this project. Pick another one.",
+    );
     expect(location()).toBe("/projects/app/tasks/new");
   });
 

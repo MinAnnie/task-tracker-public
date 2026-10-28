@@ -1,5 +1,6 @@
 import {
   comparePriority,
+  findStage,
   compareTaskKeys,
   formatTaskKey,
   isDiscordUserId,
@@ -25,6 +26,7 @@ import {
   type NotificationTarget,
 } from "./notifications.ts";
 import type { AuthenticatedUser } from "./sessions.ts";
+import type { StageRecord } from "./stage-store.ts";
 import type {
   TaskChanges,
   TaskLinkRecord,
@@ -124,6 +126,8 @@ type Forbidden = { status: "forbidden" };
 type TaskNotFound = { status: "task_not_found" };
 type Invalid = { status: "invalid"; field: TaskField };
 type InvalidAssignee = { status: "invalid_assignee" };
+/** The stage is well-formed but not one of the project's stages. */
+type InvalidStage = { status: "invalid_stage" };
 type DependenciesPending = { status: "dependencies_pending"; pendingDependencies: readonly string[] };
 type Found = { status: "ok"; task: TaskDetail };
 
@@ -131,6 +135,7 @@ export type ListParticipantsResult =
   | { status: "ok"; participants: TaskAssigneeView[] }
   | ProjectNotFound
   | Forbidden;
+export type ListProjectStagesResult = { status: "ok"; stages: StageRecord[] } | ProjectNotFound | Forbidden;
 export type ListTasksResult = { status: "ok"; tasks: BoardTask[] } | ProjectNotFound | Forbidden;
 export type GetTaskResult = Found | ProjectNotFound | Forbidden | TaskNotFound;
 export type CreateTaskResult =
@@ -138,6 +143,7 @@ export type CreateTaskResult =
   | ProjectNotFound
   | Forbidden
   | Invalid
+  | InvalidStage
   | InvalidAssignee;
 export type TakeTaskResult =
   | Found
@@ -159,6 +165,7 @@ export type UpdateTaskResult =
   | Forbidden
   | TaskNotFound
   | Invalid
+  | InvalidStage
   | { status: "empty_update" }
   | InvalidAssignee
   | DependenciesPending;
@@ -234,6 +241,15 @@ async function resolveAssignee(
   if (login === undefined) return undefined;
   if (!adminLogins.includes(login) && !(await store.isProjectMember(projectId, login))) return undefined;
   return store.findUserByGithubLogin(login);
+}
+
+/**
+ * The project's canonical spelling of `stage` (matched case-insensitively), `null` for
+ * no stage, or `undefined` when the project has no such stage.
+ */
+async function resolveStage(store: TaskStore, projectId: number, stage: string | null): Promise<string | null | undefined> {
+  if (stage === null) return null;
+  return findStage(await store.listProjectStages(projectId), stage)?.name;
 }
 
 async function pendingDependenciesOf(store: TaskStore, taskId: number): Promise<string[]> {
@@ -408,6 +424,17 @@ export async function listParticipants(
   return { status: "ok", participants };
 }
 
+/** The project's stages in board order; same access rules as the board. */
+export async function listProjectStages(
+  { store }: TasksDeps,
+  user: TaskViewer,
+  slug: string,
+): Promise<ListProjectStagesResult> {
+  const access = await openProject(store, user, slug);
+  if (!access.ok) return access.failure;
+  return { status: "ok", stages: await store.listProjectStages(access.project.id) };
+}
+
 /** One task by key (case-insensitive) with its dependencies, dependents and pull requests. */
 export async function getTask(
   { store }: TasksDeps,
@@ -440,8 +467,8 @@ export async function createTask(
   if (description === undefined) return { status: "invalid", field: "description" };
   const priority = body.priority === undefined ? "medium" : normalizeTaskPriority(body.priority);
   if (priority === undefined) return { status: "invalid", field: "priority" };
-  const stage = body.stage === undefined ? null : normalizeTaskStage(body.stage);
-  if (stage === undefined) return { status: "invalid", field: "stage" };
+  const requestedStage = body.stage === undefined ? null : normalizeTaskStage(body.stage);
+  if (requestedStage === undefined) return { status: "invalid", field: "stage" };
   const assigneeLogin = body.assigneeLogin ?? null;
   const { adminLogins } = deps;
 
@@ -449,6 +476,8 @@ export async function createTask(
     const access = await openProject(tx, user, slug, true);
     if (!access.ok) return access.failure;
     const { project } = access;
+    const stage = await resolveStage(tx, project.id, requestedStage);
+    if (stage === undefined) return { status: "invalid_stage" };
 
     let assignee: TaskUserRecord | null = null;
     if (assigneeLogin !== null) {
@@ -633,8 +662,12 @@ export async function updateTask(
   if (Object.keys(changes).length === 0 && !setsAssignee) return { status: "empty_update" };
   const { adminLogins } = deps;
 
+  // Setting a stage locks the project row, like stage renames and deletions do, so the
+  // stage cannot be renamed or deleted between this check and the write.
+  const setsStage = typeof changes.stage === "string";
+
   return transactionThenNotify(deps, async (tx, events): Promise<UpdateTaskResult> => {
-    const access = await openProject(tx, user, slug);
+    const access = await openProject(tx, user, slug, setsStage);
     if (!access.ok) return access.failure;
     const { project } = access;
     const task = await tx.findTaskByKey(project.id, key, { lock: true });
@@ -645,6 +678,11 @@ export async function updateTask(
     if (setsAssignee && !isAdmin(user)) return { status: "forbidden" };
 
     const write: TaskChanges = { ...changes };
+    if (setsStage) {
+      const stage = await resolveStage(tx, project.id, changes.stage!);
+      if (stage === undefined) return { status: "invalid_stage" };
+      write.stage = stage;
+    }
     let newAssignee: TaskUserRecord | undefined;
     if (setsAssignee) {
       if (assigneeLogin === null) {

@@ -88,6 +88,20 @@ export const openApiDocument = {
         },
       },
     },
+    "/api/projects/{slug}/stages": {
+      get: {
+        operationId: "listStages",
+        summary: "The project's stages in board order. A task's `stage` is one of these names, or null.",
+        parameters: [slugParameter],
+        responses: {
+          "200": {
+            description: "The stages.",
+            content: { "application/json": { schema: { type: "array", items: ref("Stage") } } },
+          },
+          ...commonErrors,
+        },
+      },
+    },
     "/api/projects/{slug}/participants": {
       get: {
         operationId: "listParticipants",
@@ -125,6 +139,16 @@ export const openApiDocument = {
             ...nullable({ type: "string" }),
             description: "Invite to the project's Discord server, or null when none is set.",
           },
+        },
+      },
+      Stage: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "name", "position"],
+        properties: {
+          id: { type: "integer" },
+          name: { type: "string" },
+          position: { type: "integer", description: "0-based board order." },
         },
       },
       TaskStatus: { type: "string", enum: [...TASK_STATUSES] },

@@ -4,9 +4,10 @@ import type { TaskStore } from "../application/task-store.ts";
 import type { TaskStatus } from "../domain/index.ts";
 import * as schema from "../db/schema.ts";
 import type { Executor } from "./drizzle-auth-store.ts";
+import { listProjectStages } from "./drizzle-stage-store.ts";
 import { findUnblockedDependents, findUnblockedTasks, lockDependents } from "./drizzle-unblocked-dependents.ts";
 
-const { members, projectMembers, projects, pullRequests, taskDependencies, taskPullRequests, tasks, users } =
+const { members, projectMembers, projects, projectStages, pullRequests, taskDependencies, taskPullRequests, tasks, users } =
   schema;
 
 /** The other end of a dependency edge, aliased to join it next to `task_dependencies`. */
@@ -119,6 +120,12 @@ export function createDrizzleTaskStore(db: Executor): TaskStore {
     async listProjectTaskKeys(projectId) {
       const rows = await db.select({ key: tasks.key }).from(tasks).where(eq(tasks.projectId, projectId));
       return rows.map((row) => row.key);
+    },
+
+    listProjectStages: (projectId) => listProjectStages(db, projectId),
+
+    async insertProjectStage(projectId, name, position) {
+      await db.insert(projectStages).values({ projectId, name, position });
     },
 
     async setNextTaskNumber(projectId, nextTaskNumber) {

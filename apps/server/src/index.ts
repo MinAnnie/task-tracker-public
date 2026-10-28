@@ -19,12 +19,14 @@ import {
   updateProject,
 } from "./application/projects.ts";
 import { endSession, findSessionUser } from "./application/sessions.ts";
+import { createStage, deleteStage, listStages, updateStage } from "./application/stages.ts";
 import {
   addTaskDependency,
   createTask,
   deleteTask,
   getTask,
   listParticipants,
+  listProjectStages,
   listTasks,
   releaseTask,
   removeTaskDependency,
@@ -41,6 +43,7 @@ import { createDiscordOAuthHttpClient } from "./infrastructure/discord-oauth-htt
 import { createDrizzleAuthStore } from "./infrastructure/drizzle-auth-store.ts";
 import { createDrizzleProjectStore } from "./infrastructure/drizzle-project-store.ts";
 import { createDrizzlePullRequestWebhookStore } from "./infrastructure/drizzle-pull-request-webhook-store.ts";
+import { createDrizzleStageStore } from "./infrastructure/drizzle-stage-store.ts";
 import { createDrizzleTaskStore } from "./infrastructure/drizzle-task-store.ts";
 import { createGithubOAuthHttpClient } from "./infrastructure/github-oauth-http-client.ts";
 import { createDiscordInteractionHandler } from "./webhooks/discord/handle-interaction.ts";
@@ -65,6 +68,7 @@ const notifications = createNotificationPublisher({
 const apiTokensDeps = { store: createDrizzleApiTokenStore(db) };
 /** Per API token, in this process's memory. */
 const apiTokenRateLimiter = createInMemoryRateLimiter({ limit: 120, windowMs: 60_000 });
+const stagesDeps = { store: createDrizzleStageStore(db) };
 const tasksDeps = { store: createDrizzleTaskStore(db), adminLogins, notifications };
 const githubOAuthClient = createGithubOAuthHttpClient({
   clientId: config.githubClientId,
@@ -147,6 +151,11 @@ const app = createApp({
   listApiTokens: (slug) => listApiTokens(apiTokensDeps, slug),
   createApiToken: (slug, body, actor) => createApiToken(apiTokensDeps, slug, body, actor),
   revokeApiToken: (slug, tokenId) => revokeApiToken(apiTokensDeps, slug, tokenId),
+  listProjectStages: (viewer, slug) => listProjectStages(tasksDeps, viewer, slug),
+  listStages: (slug) => listStages(stagesDeps, slug),
+  createStage: (slug, body) => createStage(stagesDeps, slug, body),
+  updateStage: (slug, stageId, body) => updateStage(stagesDeps, slug, stageId, body),
+  deleteStage: (slug, stageId) => deleteStage(stagesDeps, slug, stageId),
 });
 
 const server = serve({ fetch: app.fetch, port: config.port }, (info) => {

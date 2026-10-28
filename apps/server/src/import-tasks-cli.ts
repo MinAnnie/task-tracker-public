@@ -61,7 +61,8 @@ function describePlan(plan: ImportPlan, dryRun: boolean): string[] {
   const counts = `${explicitKeyCount} with explicit keys, ${tasks.length - explicitKeyCount} generated, ${dependencyCount} dependencies${entries}`;
   const noun = tasks.length === 1 ? "task" : "tasks";
   const mapping = tasks.flatMap((task) => (task.ref === null ? [] : [`  ${task.key} ← ${task.ref}`]));
-  if (!dryRun) return [`Imported ${tasks.length} ${noun} into ${projectSlug} (${counts}).`, ...mapping];
+  const stageLines = plan.newStages.length === 0 ? [] : [`New stages: ${plan.newStages.join(", ")}`];
+  if (!dryRun) return [`Imported ${tasks.length} ${noun} into ${projectSlug} (${counts}).`, ...mapping, ...stageLines];
   const statuses = IMPORTED_TASK_STATUSES.flatMap((status) => {
     const count = tasks.filter((task) => task.status === status).length;
     return count === 0 ? [] : [`${count} ${status}`];
@@ -75,6 +76,7 @@ function describePlan(plan: ImportPlan, dryRun: boolean): string[] {
   return [
     `Dry run: would import ${tasks.length} ${noun} into ${projectSlug} (${counts}).`,
     ...mapping,
+    ...stageLines,
     ...taskLines,
     ...edgeLines,
     "Nothing was written.",

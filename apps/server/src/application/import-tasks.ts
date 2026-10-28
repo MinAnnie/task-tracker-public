@@ -1,4 +1,5 @@
 import {
+  findStage,
   formatTaskKey,
   isDependencyPending,
   nextTaskKeyNumber,
@@ -13,6 +14,7 @@ import {
   type TaskPriority,
 } from "../domain/index.ts";
 import { notificationTarget, type NotificationEvent, type NotificationPublisher } from "./notifications.ts";
+import type { StageRecord } from "./stage-store.ts";
 import type { TaskProjectRecord, TaskRecord, TaskStore } from "./task-store.ts";
 
 export interface ImportTasksDeps {
@@ -56,6 +58,8 @@ export interface ImportPlan {
   addedDependencies: { task: string; dependsOn: string }[];
   /** Edges of the `dependencies` section skipped because they already exist. */
   alreadyPresentDependencyCount: number;
+  /** Stages the project lacks that the import creates, in file order (appended after the existing ones). */
+  newStages: string[];
 }
 
 export type ImportTasksResult =
@@ -435,11 +439,28 @@ function parseIdentity(
   return { id: ref, key: undefined, ref };
 }
 
+/**
+ * Resolves each task's stage to the project's spelling (case-insensitively); stages the
+ * project lacks become new stages, in file order, the first spelling winning.
+ */
+function planStages(existing: readonly StageRecord[], tasks: readonly ValidTask[]) {
+  const newStages: string[] = [];
+  const stages = tasks.map((task) => {
+    if (task.stage === null) return null;
+    const known = findStage(existing, task.stage)?.name ?? newStages.find((name) => name.toLowerCase() === task.stage!.toLowerCase());
+    if (known !== undefined) return known;
+    newStages.push(task.stage);
+    return task.stage;
+  });
+  return { stages, newStages };
+}
+
 /** Assigns keys: explicit ones as given, generated ones in file order after every existing and explicit key. */
 function plan(
   project: TaskProjectRecord,
   existing: readonly TaskRecord[],
   { tasks, extraEdges, alreadyPresentCount }: ValidImport,
+  newStages: string[],
 ) {
   const explicitKeys = tasks.flatMap((task) => task.key ?? []);
   let next = nextTaskKeyNumber(
@@ -467,6 +488,7 @@ function plan(
     roots: planned.filter((task) => task.dependsOn.length === 0).map((task) => task.key),
     addedDependencies: extraEdges.map((edge) => ({ task: keyOf(edge.task), dependsOn: keyOf(edge.dependsOn) })),
     alreadyPresentDependencyCount: alreadyPresentCount,
+    newStages,
   };
   return { importPlan, nextTaskNumber: next };
 }
@@ -478,7 +500,8 @@ function plan(
  * dependencies, then the edges of the optional `dependencies` section (which may link
  * existing tasks; edges that already exist are skipped). Imported tasks are
  * unassigned, with the file's status (`todo` by default; a `done` task may only depend on
- * done tasks). After the commit, one summary notification goes out (never
+ * done tasks). Stages the project lacks are created, appended in file order, and tasks
+ * use the project's spelling of existing ones. After the commit, one summary notification goes out (never
  * one per task). With `dryRun`, it only returns the plan.
  */
 export async function importTasks(
@@ -495,9 +518,14 @@ export async function importTasks(
     const existing = await tx.listProjectTasks(project.id);
     const validation = validate(input, existing, await tx.listProjectDependencies(project.id));
     if (!validation.ok) return { status: "invalid", errors: validation.errors };
-    const { importPlan, nextTaskNumber } = plan(project, existing, validation);
+    const existingStages = await tx.listProjectStages(project.id);
+    const { stages, newStages } = planStages(existingStages, validation.tasks);
+    const { importPlan, nextTaskNumber } = plan(project, existing, validation, newStages);
     if (dryRun) return { status: "planned", plan: importPlan };
 
+    for (const [index, name] of newStages.entries()) {
+      await tx.insertProjectStage(project.id, name, existingStages.length + index);
+    }
     const ids: number[] = [];
     for (const [index, task] of validation.tasks.entries()) {
       const { id } = await tx.insertTask({
@@ -506,7 +534,7 @@ export async function importTasks(
         title: task.title,
         description: task.description,
         priority: task.priority,
-        stage: task.stage,
+        stage: stages[index]!,
         status: task.status,
         assigneeId: null,
       });

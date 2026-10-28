@@ -14,6 +14,8 @@ export interface NewTaskFormProps {
   nextKey: string;
   /** Who the task can be assigned to, the signed-in user first. */
   assignees: { login: string; label: string }[];
+  /** The project's stages, in board order. */
+  stages: readonly string[];
   submitting: boolean;
   /** Server-side failure of the last attempt. */
   error?: string;
@@ -128,15 +130,15 @@ export function NewTaskForm(props: NewTaskFormProps) {
             </select>
           </label>
           <label className={styles.field}>
-            <span>
-              Stage <span className={styles.optional}>Optional</span>
-            </span>
-            <input
-              className={styles.input}
-              value={values.stage}
-              onChange={(event) => set("stage", event.target.value)}
-              placeholder="Sprint 3"
-            />
+            Stage
+            <select className={styles.input} value={values.stage} onChange={(event) => set("stage", event.target.value)}>
+              <option value="">No stage</option>
+              {props.stages.map((stage) => (
+                <option key={stage} value={stage}>
+                  {stage}
+                </option>
+              ))}
+            </select>
           </label>
         </div>
       </div>

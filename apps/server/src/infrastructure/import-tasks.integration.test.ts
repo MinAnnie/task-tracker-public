@@ -8,7 +8,7 @@ import type { AuthenticatedUser } from "../application/sessions.ts";
 import type { TaskStore } from "../application/task-store.ts";
 import { createTask } from "../application/tasks.ts";
 import { createDb } from "../db/client.ts";
-import { projects, repositories, taskDependencies, taskPullRequests, tasks, users } from "../db/schema.ts";
+import { projects, projectStages, repositories, taskDependencies, taskPullRequests, tasks, users } from "../db/schema.ts";
 import { extractTaskKeys } from "../domain/index.ts";
 import { createDrizzlePullRequestWebhookStore } from "./drizzle-pull-request-webhook-store.ts";
 import { createDrizzleTaskStore } from "./drizzle-task-store.ts";
@@ -78,6 +78,25 @@ describe("importTasks (Postgres)", () => {
     expect(notifications.events).toEqual([
       { channelId: "42", projectSlug: "shop", type: "tasks_imported", count: 4, explicitKeyCount: 2, doneCount: 0 },
     ]);
+  });
+
+  it("creates the missing stages after the existing ones, in the same transaction", async () => {
+    await db.insert(projectStages).values({ projectId: shop, name: "etapa 0", position: 0 });
+
+    expect(await importTasks({ store, notifications }, "shop", FILE)).toMatchObject({
+      status: "imported",
+      plan: { newStages: ["Etapa 1 · Autenticación"] },
+    });
+    const stages = await db
+      .select({ name: projectStages.name, position: projectStages.position })
+      .from(projectStages)
+      .orderBy(asc(projectStages.position));
+    expect(stages).toEqual([
+      { name: "etapa 0", position: 0 },
+      { name: "Etapa 1 · Autenticación", position: 1 },
+    ]);
+    const [monorepo] = await db.select({ stage: tasks.stage }).from(tasks).where(eq(tasks.key, "AX-1"));
+    expect(monorepo?.stage).toBe("etapa 0");
   });
 
   it("persists the imported statuses and counts the done tasks in the summary", async () => {

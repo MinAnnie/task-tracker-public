@@ -300,14 +300,25 @@ describe("assigneeOptions", () => {
 });
 
 describe("stageOptions", () => {
-  it("lists the stages present, sorted, then 'No stage' when some task has none", () => {
+  it("lists the project's stages in their order, then stages only tasks have, then 'No stage'", () => {
+    const tasks = [boardTask({ stage: "Legacy" }), boardTask({ stage: "QA" }), boardTask({ stage: null })];
+    expect(stageOptions(["QA", "Backend", "Done"], tasks)).toEqual([
+      { value: "QA", label: "QA" },
+      { value: "Backend", label: "Backend" },
+      { value: "Done", label: "Done" },
+      { value: "Legacy", label: "Legacy" },
+      { value: NO_STAGE, label: "No stage" },
+    ]);
+  });
+
+  it("lists stages present on tasks, sorted naturally, when the project's stages are unknown", () => {
     const tasks = [
       boardTask({ stage: "Etapa 2" }),
       boardTask({ stage: null }),
       boardTask({ stage: "Etapa 10" }),
       boardTask({ stage: "Etapa 2" }),
     ];
-    expect(stageOptions(tasks)).toEqual([
+    expect(stageOptions([], tasks)).toEqual([
       { value: "Etapa 2", label: "Etapa 2" },
       { value: "Etapa 10", label: "Etapa 10" },
       { value: NO_STAGE, label: "No stage" },
@@ -315,7 +326,7 @@ describe("stageOptions", () => {
   });
 
   it("keeps selected stages no task has any more, so they can be cleared", () => {
-    expect(stageOptions([boardTask({ stage: "B" })], ["A"])).toEqual([
+    expect(stageOptions([], [boardTask({ stage: "B" })], ["A"])).toEqual([
       { value: "A", label: "A" },
       { value: "B", label: "B" },
     ]);

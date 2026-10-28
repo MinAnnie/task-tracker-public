@@ -9,6 +9,7 @@ import {
   deleteTask,
   getTask,
   listParticipants,
+  listProjectStages,
   listTasks,
   releaseTask,
   removeTaskDependency,
@@ -98,6 +99,11 @@ describe("tasks", () => {
         avatarUrl,
       })),
     );
+    store.stages.push(
+      { id: 1, projectId: PROJECT_ID, name: "Backend", position: 0 },
+      { id: 2, projectId: PROJECT_ID, name: "QA", position: 1 },
+      { id: 3, projectId: OTHER_PROJECT_ID, name: "Frontend", position: 0 },
+    );
     deps = { store, adminLogins: ["octocat"], notifications: new RecordingNotifications() };
   });
 
@@ -105,6 +111,7 @@ describe("tasks", () => {
     const calls = [
       ["listTasks", (u: AuthenticatedUser, slug: string) => listTasks(deps, u, slug)],
       ["listParticipants", (u: AuthenticatedUser, slug: string) => listParticipants(deps, u, slug)],
+      ["listProjectStages", (u: AuthenticatedUser, slug: string) => listProjectStages(deps, u, slug)],
       ["getTask", (u: AuthenticatedUser, slug: string) => getTask(deps, u, slug, "RF-1")],
       ["createTask", (u: AuthenticatedUser, slug: string) => createTask(deps, u, slug, { title: "X" })],
       ["takeTask", (u: AuthenticatedUser, slug: string) => takeTask(deps, u, slug, "RF-1")],
@@ -174,13 +181,24 @@ describe("tasks", () => {
         title: "Checkout",
         description: "Use *Wompi*",
         priority: "urgent",
-        stage: " Backend ",
+        stage: " backend ",
       });
 
       expect(result).toMatchObject({
         status: "created",
         task: { description: "Use *Wompi*", priority: "urgent", stage: "Backend" },
       });
+      expect(store.byKey("RF-1").stage).toBe("Backend");
+    });
+
+    it("treats a blank stage as none", async () => {
+      expect(await createTask(deps, mona, "shop", { title: "X", stage: "  " })).toMatchObject({ task: { stage: null } });
+    });
+
+    it.each([["Frontend"], ["Design"]])("rejects %j, which is not a stage of the project", async (stage) => {
+      expect(await createTask(deps, mona, "shop", { title: "X", stage })).toEqual({ status: "invalid_stage" });
+      expect(store.tasks).toHaveLength(0);
+      expect(store.projects[0]?.nextTaskNumber).toBe(1);
     });
 
     it("numbers keys sequentially", async () => {
@@ -249,6 +267,24 @@ describe("tasks", () => {
       expect(await createTask(deps, mona, "shop", body)).toEqual({ status: "invalid", field });
       expect(store.tasks).toHaveLength(0);
       expect(store.projects[0]?.nextTaskNumber).toBe(1);
+    });
+  });
+
+  describe("listProjectStages", () => {
+    it("lists the project's stages in order to participants and API tokens", async () => {
+      store.stages.push({ id: 4, projectId: PROJECT_ID, name: "Alpha", position: 2 });
+      const expected = {
+        status: "ok",
+        stages: [
+          { id: 1, name: "Backend", position: 0 },
+          { id: 2, name: "QA", position: 1 },
+          { id: 4, name: "Alpha", position: 2 },
+        ],
+      };
+      expect(await listProjectStages(deps, mona, "shop")).toEqual(expected);
+      const token: ApiTokenViewer = { kind: "api_token", projectId: PROJECT_ID };
+      expect(await listProjectStages(deps, token, "shop")).toEqual(expected);
+      expect(await listProjectStages(deps, token, "blog")).toEqual({ status: "project_not_found" });
     });
   });
 
@@ -534,7 +570,7 @@ describe("tasks", () => {
       const result = await updateTask(deps, bob, "shop", "RF-1", {
         title: " Renamed ",
         description: null,
-        stage: " Backend ",
+        stage: " BACKEND ",
         priority: "low",
       });
 
@@ -543,6 +579,20 @@ describe("tasks", () => {
         task: { title: "Renamed", description: null, stage: "Backend", priority: "low" },
       });
       expect(store.taskLocks).toEqual(["RF-1"]);
+      // Locked so a concurrent rename or deletion of the stage cannot slip in between.
+      expect(store.projectLocks).toEqual(["shop"]);
+    });
+
+    it("does not lock the project when the stage does not change", async () => {
+      seedTask("RF-1");
+      await updateTask(deps, bob, "shop", "RF-1", { title: "Renamed" });
+      expect(store.projectLocks).toEqual([]);
+    });
+
+    it("rejects a stage the project does not have", async () => {
+      seedTask("RF-1", { stage: "QA" });
+      expect(await updateTask(deps, bob, "shop", "RF-1", { stage: "Frontend" })).toEqual({ status: "invalid_stage" });
+      expect(store.byKey("RF-1").stage).toBe("QA");
     });
 
     it("clears the stage with null", async () => {

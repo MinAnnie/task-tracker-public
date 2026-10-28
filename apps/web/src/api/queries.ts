@@ -1,6 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as api from "./endpoints.ts";
-import type { NewApiTokenInput, NewProjectInput, NewTaskInput, ProjectChanges, TaskChanges } from "./types.ts";
+import type {
+  NewApiTokenInput,
+  NewProjectInput,
+  NewTaskInput,
+  ProjectChanges,
+  StageChanges,
+  TaskChanges,
+} from "./types.ts";
 
 export const queryKeys = {
   me: ["me"] as const,
@@ -8,6 +15,7 @@ export const queryKeys = {
   board: (slug: string) => ["projects", slug, "tasks"] as const,
   task: (slug: string, key: string) => ["projects", slug, "tasks", key.toUpperCase()] as const,
   participants: (slug: string) => ["projects", slug, "participants"] as const,
+  stages: (slug: string) => ["projects", slug, "stages"] as const,
   /** Everything about one project the signed-in user sees: board, tasks, participants. */
   project: (slug: string) => ["projects", slug] as const,
   adminMembers: ["admin", "members"] as const,
@@ -15,6 +23,7 @@ export const queryKeys = {
   adminProjects: ["admin", "projects"] as const,
   adminProject: (slug: string) => ["admin", "projects", slug] as const,
   adminProjectTokens: (slug: string) => ["admin", "projects", slug, "tokens"] as const,
+  adminProjectStages: (slug: string) => ["admin", "projects", slug, "stages"] as const,
 };
 
 export const useCurrentUser = () => useQuery({ queryKey: queryKeys.me, queryFn: api.fetchCurrentUser });
@@ -29,6 +38,9 @@ export const useTask = (slug: string, key: string) =>
 
 export const useParticipants = (slug: string, { enabled = true }: { enabled?: boolean } = {}) =>
   useQuery({ queryKey: queryKeys.participants(slug), queryFn: () => api.fetchParticipants(slug), enabled });
+
+export const useStages = (slug: string) =>
+  useQuery({ queryKey: queryKeys.stages(slug), queryFn: () => api.fetchStages(slug) });
 
 /**
  * Every task mutation can change the board (status, assignee, `canTake`) and other
@@ -230,4 +242,30 @@ export function useCreateApiToken(slug: string) {
 export function useRevokeApiToken(slug: string) {
   const invalidate = useInvalidate(queryKeys.adminProjectTokens(slug));
   return useMutation({ mutationFn: (id: number) => api.revokeApiToken(slug, id), onSettled: invalidate });
+}
+
+export const useAdminStages = (slug: string) =>
+  useQuery({ queryKey: queryKeys.adminProjectStages(slug), queryFn: () => api.fetchAdminStages(slug) });
+
+/** Stage changes reorder the board's stage filter and, on rename, change tasks' stages. */
+function useStagesInvalidation(slug: string) {
+  return useInvalidate(queryKeys.adminProjectStages(slug), queryKeys.project(slug));
+}
+
+export function useCreateStage(slug: string) {
+  const invalidate = useStagesInvalidation(slug);
+  return useMutation({ mutationFn: (name: string) => api.createStage(slug, name), onSettled: invalidate });
+}
+
+export function useUpdateStage(slug: string) {
+  const invalidate = useStagesInvalidation(slug);
+  return useMutation({
+    mutationFn: ({ id, changes }: { id: number; changes: StageChanges }) => api.updateStage(slug, id, changes),
+    onSettled: invalidate,
+  });
+}
+
+export function useDeleteStage(slug: string) {
+  const invalidate = useStagesInvalidation(slug);
+  return useMutation({ mutationFn: (id: number) => api.deleteStage(slug, id), onSettled: invalidate });
 }
