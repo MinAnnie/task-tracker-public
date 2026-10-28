@@ -2358,6 +2358,17 @@ describe("API token (bearer) writes", () => {
     },
   );
 
+  it.each([[{ title: "X", assigneeLogin: "mona" }], [{ title: "X", assigneeLogin: null }]])(
+    "refuses to create an assigned task (%j)",
+    async (body) => {
+      const { app, spies } = writeApp();
+      const res = await bearerRequest(app, "/api/projects/shop/tasks", { method: "POST", body: JSON.stringify(body) });
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ error: "token_not_allowed" });
+      expect(spies.createTask).not.toHaveBeenCalled();
+    },
+  );
+
   it.each([
     ["POST", "/api/projects/shop/tasks/RF-1/take", "{}"],
     ["POST", "/api/projects/shop/tasks/RF-1/release", "{}"],

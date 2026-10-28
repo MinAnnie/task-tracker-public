@@ -96,7 +96,7 @@ export const openApiDocument = {
       post: {
         operationId: "createTask",
         summary: "Creates a task keyed <PREFIX>-<n>.",
-        description: `${WRITE_NOTE} With an assignee it starts in_progress (409 \`dependencies_pending\` while a dependency is not done), otherwise todo.`,
+        description: `${WRITE_NOTE} With an assignee it starts in_progress (409 \`dependencies_pending\` while a dependency is not done), otherwise todo. Tokens cannot set the assignee (\`assigneeLogin\` answers 403 \`token_not_allowed\`).`,
         security: writeSecurity,
         parameters: [slugParameter],
         requestBody: jsonBody(ref("NewTask")),

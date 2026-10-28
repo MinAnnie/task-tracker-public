@@ -988,6 +988,10 @@ export function createApp({
   tasksApi.post("/", async (c) => {
     const parsed = await readJsonBody(c);
     if (!parsed.ok) return c.json({ error: "malformed_json" }, 400);
+    // A write token creates tasks but never decides who works on them.
+    if (viaApiToken(c) && bodyField(parsed.body, "assigneeLogin") !== undefined) {
+      return c.json({ error: "token_not_allowed" }, 403);
+    }
     const result = await createTask(c.get("user"), c.req.param("slug")!, parsed.body);
     return result.status === "created" ? c.json(result.task, 201) : taskFailure(c, result);
   });
