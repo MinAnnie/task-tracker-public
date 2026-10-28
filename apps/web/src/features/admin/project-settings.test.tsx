@@ -14,7 +14,7 @@ const apiToken = (overrides: Partial<ApiToken> = {}): ApiToken => ({
   id: 1,
   name: "VPS agent",
   prefix: "abcdefgh",
-  permission: "read",
+  scope: "read",
   createdAt: "2026-10-01T15:00:00.000Z",
   createdBy: "octocat",
   lastUsedAt: null,
@@ -63,6 +63,7 @@ function setup(overrides: Record<string, unknown> = {}) {
       id: 2,
       name: "Old script",
       prefix: "zyxwvuts",
+      scope: "write",
       lastUsedAt: "2026-10-05T10:00:00.000Z",
       expiresAt: null,
       revokedAt: "2026-10-06T10:00:00.000Z",
@@ -454,7 +455,7 @@ describe("Project settings", () => {
   describe("API tokens", () => {
     const section = () => screen.findByRole("region", { name: "API tokens" });
 
-    it("lists the project's tokens with their prefix, permission, dates and status", async () => {
+    it("lists the project's tokens with their prefix, access, dates and status", async () => {
       setup();
       const region = await section();
       const rows = await within(region).findAllByRole("listitem");
@@ -469,10 +470,34 @@ describe("Project settings", () => {
       expect(rows[0]).toHaveTextContent("Active");
       expect(within(rows[0]!).getByRole("button", { name: "Revoke VPS agent" })).toBeInTheDocument();
 
+      expect(rows[1]).toHaveTextContent("Read & write");
+      expect(rows[1]).not.toHaveTextContent("Read only");
       expect(rows[1]).toHaveTextContent("Last used Oct 5, 2026");
       expect(rows[1]).toHaveTextContent("Never expires");
       expect(rows[1]).toHaveTextContent("Revoked");
       expect(within(rows[1]!).queryByRole("button", { name: /Revoke/ })).not.toBeInTheDocument();
+    });
+
+    it("creates a read & write token after warning what it can do", async () => {
+      const { api, user } = setup();
+      const region = await section();
+      const access = within(region).getByRole("radiogroup", { name: "Access" });
+      expect(within(access).getByRole("radio", { name: "Read only" })).toBeChecked();
+      expect(region).not.toHaveTextContent("can create and edit tasks");
+
+      await user.click(within(access).getByRole("radio", { name: "Read & write" }));
+      expect(region).toHaveTextContent(
+        "This token can create and edit tasks and their dependencies as you, with your access. Give it only to tools you trust.",
+      );
+      await user.type(within(region).getByRole("textbox", { name: "Token name" }), "Agent");
+      await user.click(within(region).getByRole("button", { name: "Create token" }));
+
+      await waitFor(() =>
+        expect(api.calls).toContainEqual({
+          route: "POST /api/admin/projects/app/tokens",
+          body: { name: "Agent", expiresInDays: 90, scope: "write" },
+        }),
+      );
     });
 
     it("explains an empty list", async () => {
@@ -498,7 +523,7 @@ describe("Project settings", () => {
       await waitFor(() =>
         expect(api.calls).toContainEqual({
           route: "POST /api/admin/projects/app/tokens",
-          body: { name: "CI bot", expiresInDays: 90 },
+          body: { name: "CI bot", expiresInDays: 90, scope: "read" },
         }),
       );
       const dialog = await screen.findByRole("dialog", { name: "Token for CI bot created" });
@@ -536,7 +561,7 @@ describe("Project settings", () => {
       await waitFor(() =>
         expect(api.calls).toContainEqual({
           route: "POST /api/admin/projects/app/tokens",
-          body: { name: "Forever", expiresInDays: null },
+          body: { name: "Forever", expiresInDays: null, scope: "read" },
         }),
       );
     });

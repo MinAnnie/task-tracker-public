@@ -570,3 +570,39 @@
     min-height: var(--touch-target);
   }
 }
+
+/* Token access choice */
+.choice {
+  border: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  font-size: 14px;
+}
+
+.choiceLegend {
+  width: 100%;
+  padding: 0;
+  margin-bottom: 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.choiceOption {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+}
+
+.warning {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-warning-fg);
+  background: var(--color-warning-bg);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+}

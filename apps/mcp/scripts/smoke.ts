@@ -1,7 +1,7 @@
 /**
  * End-to-end smoke test (not part of `pnpm test`): starts the built server (dist/index.js)
  * over stdio with the SDK client and calls tools/list, list_tasks, next_tasks and get_task
- * against a running Task Tracker API.
+ * against a running Task Tracker API. It never calls the write tools, so any token works.
  *
  *   pnpm --filter @task-tracker/mcp build
  *   TRACKER_API_URL=http://localhost:3001 TRACKER_API_TOKEN=... pnpm --filter @task-tracker/mcp smoke
@@ -43,7 +43,8 @@ try {
   await client.connect(transport);
   const { tools } = await client.listTools();
   console.log(`tools/list: ${tools.map((t) => t.name).join(", ")}`);
-  if (tools.length !== 4) failed = true;
+  // 4 read tools + 4 write tools; the smoke test only calls the read ones.
+  if (tools.length !== 8) failed = true;
   await call("list_projects", {});
   const list = await call("list_tasks", { limit: 5 });
   await call("list_tasks", { availability: "blocked", limit: 3 });

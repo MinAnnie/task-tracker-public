@@ -192,6 +192,8 @@ export interface NewProjectInput {
 export type ProjectChanges = Partial<NewProjectInput>;
 
 export type ApiTokenStatus = "active" | "expired" | "revoked";
+/** `write` tokens may also create and edit tasks and their dependencies. */
+export type ApiTokenScope = "read" | "write";
 
 /** A project-scoped API token as listed to admins: metadata only, never the secret. */
 export interface ApiToken {
@@ -199,7 +201,7 @@ export interface ApiToken {
   name: string;
   /** First 8 characters after `ttk_`. */
   prefix: string;
-  permission: "read";
+  scope: ApiTokenScope;
   /** ISO timestamps. */
   createdAt: string;
   /** Login of the admin who created it, when that user still exists. */
@@ -220,4 +222,5 @@ export interface NewApiTokenInput {
   name: string;
   /** `null` means it never expires. */
   expiresInDays: number | null;
+  scope: ApiTokenScope;
 }

@@ -155,7 +155,7 @@ describe("apiTokenDetails", () => {
     id: 1,
     name: "A",
     prefix: "abcdefgh",
-    permission: "read" as const,
+    scope: "read" as const,
     createdAt: "2026-10-01T15:00:00.000Z",
     createdBy: "octocat",
     lastUsedAt: null,

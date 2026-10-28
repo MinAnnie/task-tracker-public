@@ -1,4 +1,5 @@
-import type { ApiTokenPermission } from "../domain/api-token.ts";
+import type { ApiTokenScope } from "../domain/api-token.ts";
+import type { SessionUser } from "./auth-store.ts";
 import type { ProjectRef } from "./project-store.ts";
 
 /** An API token as listed to admins; the secret itself is never stored. */
@@ -8,7 +9,7 @@ export interface ApiTokenRecord {
   name: string;
   /** First 8 characters after `ttk_`, enough to recognize a token. */
   tokenPrefix: string;
-  permission: ApiTokenPermission;
+  scope: ApiTokenScope;
   createdAt: Date;
   /** GitHub login of the admin who created it; `null` once that user is gone. */
   createdByLogin: string | null;
@@ -23,7 +24,7 @@ export interface NewApiToken {
   /** Hex SHA-256 of the full token. */
   tokenHash: string;
   tokenPrefix: string;
-  permission: ApiTokenPermission;
+  scope: ApiTokenScope;
   createdByUserId: number;
   expiresAt: Date | null;
 }
@@ -31,11 +32,13 @@ export interface NewApiToken {
 /** What authenticating a request needs to know about the token behind a hash. */
 export interface ApiTokenCredential {
   id: number;
-  permission: ApiTokenPermission;
+  scope: ApiTokenScope;
   expiresAt: Date | null;
   lastUsedAt: Date | null;
   revokedAt: Date | null;
   project: ProjectRef;
+  /** The user who created it, whose access a write token acts with; `null` once that user is gone. */
+  creator: SessionUser | null;
 }
 
 /** Persistence port for project-scoped API tokens. */

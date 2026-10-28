@@ -1,6 +1,6 @@
 # Task Tracker MCP server
 
-A read-only [Model Context Protocol](https://modelcontextprotocol.io) server over stdio. It lets AI agents read one Task Tracker project through a project-scoped API token. It never writes anything.
+A [Model Context Protocol](https://modelcontextprotocol.io) server over stdio. It lets AI agents read one Task Tracker project through a project-scoped API token and, with a **Read & write** token, create and edit its tasks and dependencies.
 
 | Tool | What it returns |
 | --- | --- |
@@ -8,6 +8,12 @@ A read-only [Model Context Protocol](https://modelcontextprotocol.io) server ove
 | `list_tasks` | The board as compact lines (`KEY · status · priority · stage · assignee · title`, plus "waiting on …"), sorted by priority and then key. It shows total vs shown counts. Filters: `availability` (`any`/`ready`/`blocked`), `status[]`, `priority[]`, `stage[]` (`""` = no stage), `assignee` (`any`/`unassigned`/login), `search`, `limit` (default 50, max 200). |
 | `get_task` | One task as the web's "Copy for AI" markdown brief: status, dependencies, what it blocks, PRs, the suggested branch `feat/<KEY>-<slug>`, a link, and the description. |
 | `next_tasks` | Ready tasks, most urgent first, each with why it is ready and what it unblocks (`limit`, default 10). |
+| `create_task` | **Modifies data.** Creates a task (`title`, optional `description`, `priority`, `stage`, `dependsOn` keys) and returns its brief. It starts unassigned in `todo`. |
+| `update_task` | **Modifies data.** Changes `title`, `description`, `priority`, `stage` or `status` of a task (`null` clears the description or stage) and returns its brief. The assignee can't be changed with a token. |
+| `add_dependency` | **Modifies data.** Makes `key` depend on `dependsOn` (same project; cycles are refused). |
+| `remove_dependency` | **Modifies data.** Removes that dependency. |
+
+The four write tools need a token created with **Read & write** access. They act as the admin who created the token, with that admin's current access, and Discord notifications name that admin. With a read-only token they fail with: "This token is read-only. Create a Read & write token in Admin → the project → API tokens."
 
 A task is **ready** when it is unassigned, not done, and has no pending dependency. The server computes this itself because the API always answers `canTake: false` to tokens.
 
@@ -22,7 +28,7 @@ pnpm --filter @task-tracker/mcp build    # → apps/mcp/dist/index.js
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `TRACKER_API_TOKEN` | — (required) | A read-only token (`ttk_…`). Create it in Admin → project → **API tokens**. If it is missing, the server still starts, but every tool answers `TRACKER_API_TOKEN is not set`. |
+| `TRACKER_API_TOKEN` | — (required) | An API token (`ttk_…`): **Read only** for the read tools, **Read & write** to also use the write tools. Create it in Admin → project → **API tokens**. If it is missing, the server still starts, but every tool answers `TRACKER_API_TOKEN is not set`. |
 | `TRACKER_API_URL` | — (required) | The Task Tracker base URL, e.g. `https://your-tracker.example.com`. Task links use it too. If it is missing, the server still starts, but every tool answers `TRACKER_API_URL is not set`. |
 | `TRACKER_PROJECT` | — | The default project slug. Without it, the server uses the token's only project. |
 
@@ -72,7 +78,7 @@ Assumed (not tested here):
 pnpm --filter @task-tracker/mcp test        # unit tests (client, filters, formatters, tools, protocol)
 ```
 
-End-to-end smoke test, which is not part of `pnpm test`. It starts `dist/index.js` over stdio with the SDK client and calls `tools/list`, `list_projects`, `list_tasks`, `next_tasks` and `get_task` against a running API:
+End-to-end smoke test, which is not part of `pnpm test`. It starts `dist/index.js` over stdio with the SDK client, checks that `tools/list` has all eight tools, and calls `list_projects`, `list_tasks`, `next_tasks` and `get_task` against a running API. It never calls a write tool:
 
 ```sh
 pnpm --filter @task-tracker/mcp build

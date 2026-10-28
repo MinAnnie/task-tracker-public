@@ -1,4 +1,4 @@
-/** Response shapes of the Task Tracker read API (see apps/server/src/openapi.ts). */
+/** Shapes of the Task Tracker API for tokens (see apps/server/src/openapi.ts). */
 
 export const TASK_STATUSES = ["todo", "in_progress", "in_review", "done", "blocked"] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
@@ -64,4 +64,22 @@ export interface TaskDetail {
   dependsOn: TaskLink[];
   blocks: TaskLink[];
   pullRequests: TaskPullRequest[];
+}
+
+/** Body of POST /api/projects/{slug}/tasks (write tokens). */
+export interface NewTaskInput {
+  title: string;
+  description?: string;
+  priority?: TaskPriority;
+  stage?: string;
+  dependsOnKeys?: string[];
+}
+
+/** Body of PATCH /api/projects/{slug}/tasks/{key} (write tokens); `null` clears a field. */
+export interface TaskChanges {
+  title?: string;
+  description?: string | null;
+  priority?: TaskPriority;
+  stage?: string | null;
+  status?: TaskStatus;
 }

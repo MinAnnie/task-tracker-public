@@ -61,6 +61,7 @@ import type {
   PullRequestEventResult,
 } from "./application/handle-pull-request-event.ts";
 import type { RateLimitDecision } from "./infrastructure/in-memory-rate-limiter.ts";
+import { normalizeProjectSlug } from "./domain/index.ts";
 import { openApiDocument } from "./openapi.ts";
 import { parsePullRequestPayload } from "./webhooks/github/parse-pull-request-payload.ts";
 import { verifyGithubSignature } from "./webhooks/github/verify-signature.ts";
@@ -157,6 +158,11 @@ export interface AppDeps {
   createApiToken: (slug: string, body: unknown, actor: AuthenticatedUser) => Promise<CreateApiTokenResult>;
   /** Revokes a token; `tokenId` is the untrusted path segment. */
   revokeApiToken: (slug: string, tokenId: string) => Promise<RevokeApiTokenResult>;
+  /**
+   * The user a `write` token acts as: its creator with their current role, or
+   * `undefined` when the creator is gone or no longer an admin or member.
+   */
+  resolveApiTokenActor: (caller: ApiTokenCaller) => Promise<AuthenticatedUser | undefined>;
   /** The stages of a project the user (or API token) participates in. */
   listProjectStages: (viewer: TaskViewer, slug: string) => Promise<ListProjectStagesResult>;
   /** The stages of a project (admin view). */
@@ -194,11 +200,26 @@ const INVALID_API_TOKEN_FIELD_ERRORS: Record<ApiTokenField, string> = {
   body: "invalid_body",
   name: "invalid_token_name",
   expiresInDays: "invalid_token_expiry",
-  permission: "invalid_token_permission",
+  scope: "invalid_token_scope",
 };
 
 /** `Authorization: Bearer <token>` with exactly one credential; anything else is not a bearer token. */
 const BEARER_AUTHORIZATION = /^Bearer +(\S+) *$/i;
+
+/**
+ * The only writes a bearer token may attempt, by method and exact path: creating a task,
+ * editing one (never its assignee), and adding or removing its dependencies. They still
+ * need a `write` token; every other non-GET request with a bearer token is refused.
+ */
+const TOKEN_WRITE_ROUTES: readonly { method: string; path: RegExp }[] = [
+  { method: "POST", path: /^\/api\/projects\/[^/]+\/tasks$/ },
+  { method: "PATCH", path: /^\/api\/projects\/[^/]+\/tasks\/[^/]+$/ },
+  { method: "POST", path: /^\/api\/projects\/[^/]+\/tasks\/[^/]+\/dependencies$/ },
+  { method: "DELETE", path: /^\/api\/projects\/[^/]+\/tasks\/[^/]+\/dependencies\/[^/]+$/ },
+];
+
+const isTokenWriteRoute = (method: string, path: string) =>
+  TOKEN_WRITE_ROUTES.some((route) => route.method === method && route.path.test(path));
 
 const INVALID_FIELD_ERRORS: Record<ProjectField, string> = {
   body: "invalid_body",
@@ -353,6 +374,7 @@ export function createApp({
   listApiTokens,
   createApiToken,
   revokeApiToken,
+  resolveApiTokenActor,
   listProjectStages,
   listStages,
   createStage,
@@ -398,6 +420,28 @@ export function createApp({
    * privilege: the narrower credential wins); otherwise by the session cookie. Every
    * token failure answers the same 401, and the token is never logged.
    */
+  /**
+   * Authenticates the bearer token in `authorization` and counts the request against its
+   * rate limit. Every token failure answers the same 401, and the token is never logged.
+   */
+  const authenticateBearer = async (
+    c: Context,
+    authorization: string,
+  ): Promise<{ ok: true; caller: ApiTokenCaller } | { ok: false; response: Response }> => {
+    const token = BEARER_AUTHORIZATION.exec(authorization)?.[1];
+    const caller = token === undefined ? undefined : await authenticateApiToken(token);
+    if (caller === undefined) {
+      c.header("WWW-Authenticate", "Bearer");
+      return { ok: false, response: c.json({ error: "invalid_token" }, 401) };
+    }
+    const limit = rateLimitApiToken(caller.tokenId);
+    if (!limit.allowed) {
+      c.header("Retry-After", String(limit.retryAfterSeconds));
+      return { ok: false, response: c.json({ error: "rate_limited" }, 429) };
+    }
+    return { ok: true, caller };
+  };
+
   const requireViewer = createMiddleware<AdminEnv>(async (c, next) => {
     const authorization = c.req.header("authorization");
     if (authorization === undefined) {
@@ -407,28 +451,26 @@ export function createApp({
       return next();
     }
 
-    const token = BEARER_AUTHORIZATION.exec(authorization)?.[1];
-    const caller = token === undefined ? undefined : await authenticateApiToken(token);
-    if (caller === undefined) {
-      c.header("WWW-Authenticate", "Bearer");
-      return c.json({ error: "invalid_token" }, 401);
-    }
-    const limit = rateLimitApiToken(caller.tokenId);
-    if (!limit.allowed) {
-      c.header("Retry-After", String(limit.retryAfterSeconds));
-      return c.json({ error: "rate_limited" }, 429);
-    }
-    c.set("viewer", caller);
+    const authenticated = await authenticateBearer(c, authorization);
+    if (!authenticated.ok) return authenticated.response;
+    c.set("viewer", authenticated.caller);
     await next();
   });
 
   /**
    * A bearer token never elevates: any request other than GET/HEAD that carries an
-   * `Authorization` header is refused before authentication, even with a valid session.
+   * `Authorization` header is refused before authentication, even with a valid session,
+   * except on the few task writes of {@link TOKEN_WRITE_ROUTES}, which
+   * {@link requireTaskWriter} then authenticates.
    */
   const refuseTokenWrites = createMiddleware(async (c, next) => {
     const method = c.req.method;
-    if (c.req.header("authorization") !== undefined && method !== "GET" && method !== "HEAD") {
+    if (
+      c.req.header("authorization") !== undefined &&
+      method !== "GET" &&
+      method !== "HEAD" &&
+      !isTokenWriteRoute(method, c.req.path)
+    ) {
       return c.json({ error: "token_not_allowed" }, 403);
     }
     await next();
@@ -446,9 +488,51 @@ export function createApp({
     const method = c.req.method;
     if (method === "GET" || method === "HEAD" || method === "OPTIONS") return next();
     if (c.req.header("origin") !== appOrigin) return c.json({ error: "invalid_origin" }, 403);
+    return jsonBodyRefusal(c) ?? next();
+  });
+
+  /** 415 for a POST or PATCH whose body is not declared as JSON. */
+  const jsonBodyRefusal = (c: Context) => {
+    const method = c.req.method;
     if ((method === "POST" || method === "PATCH") && !isJsonContentType(c.req.header("content-type"))) {
       return c.json({ error: "unsupported_media_type" }, 415);
     }
+    return undefined;
+  };
+
+  /**
+   * For the task writes. Without an `Authorization` header: the session cookie, with
+   * the same-origin JSON checks ({@link requireUser}, {@link requireSameOriginJson}).
+   * With one (only {@link TOKEN_WRITE_ROUTES} get here, and the bearer token wins over
+   * any cookie): a `write` token of this very project, acting as its creator with
+   * their current role. Bearer requests carry no cookies, so they skip the Origin check,
+   * but bodies must still be declared as JSON.
+   */
+  const requireTaskWriter = createMiddleware<AdminEnv>(async (c, next) => {
+    const authorization = c.req.header("authorization");
+    if (authorization === undefined) {
+      const user = await sessionUser(c);
+      if (user === undefined) return c.json({ error: "unauthenticated" }, 401);
+      if (c.req.header("origin") !== appOrigin) return c.json({ error: "invalid_origin" }, 403);
+      const refusal = jsonBodyRefusal(c);
+      if (refusal) return refusal;
+      c.set("user", user);
+      return next();
+    }
+
+    const authenticated = await authenticateBearer(c, authorization);
+    if (!authenticated.ok) return authenticated.response;
+    const { caller } = authenticated;
+    if (caller.scope !== "write") return c.json({ error: "token_not_allowed" }, 403);
+    if (normalizeProjectSlug(c.req.param("slug")) !== caller.project.slug) {
+      return c.json({ error: "project_not_found" }, 404);
+    }
+    const refusal = jsonBodyRefusal(c);
+    if (refusal) return refusal;
+    const actor = await resolveApiTokenActor(caller);
+    if (actor === undefined) return c.json({ error: "forbidden" }, 403);
+    c.set("user", actor);
+    c.set("viewer", caller);
     await next();
   });
 
@@ -885,9 +969,16 @@ export function createApp({
   });
 
   // Project participants (admins, or members of the project); the use cases check access.
-  // Reads also accept a project-scoped API token; writes need the cookie session.
+  // Reads also accept a project-scoped API token; writes need the cookie session or, for
+  // the few TOKEN_WRITE_ROUTES, a write token of the project.
   const tasksApi = new Hono<AdminEnv>();
-  tasksApi.on(["POST", "PATCH", "DELETE"], ["/", "/*"], requireUser, requireSameOriginJson);
+  tasksApi.on(["POST", "PATCH", "DELETE"], ["/", "/*"], requireTaskWriter);
+
+  /** Whether the request was authenticated by an API token rather than a session. */
+  const viaApiToken = (c: Context<AdminEnv>) => {
+    const viewer = c.get("viewer") as Viewer | undefined;
+    return viewer !== undefined && "kind" in viewer;
+  };
 
   tasksApi.get("/", requireViewer, async (c) => {
     const result = await listTasks(c.get("viewer"), c.req.param("slug")!);
@@ -909,6 +1000,10 @@ export function createApp({
   tasksApi.patch("/:key", async (c) => {
     const parsed = await readJsonBody(c);
     if (!parsed.ok) return c.json({ error: "malformed_json" }, 400);
+    // A write token edits tasks but never decides who works on them.
+    if (viaApiToken(c) && bodyField(parsed.body, "assigneeLogin") !== undefined) {
+      return c.json({ error: "token_not_allowed" }, 403);
+    }
     const result = await updateTask(c.get("user"), c.req.param("slug")!, c.req.param("key"), parsed.body);
     return result.status === "ok" ? c.json(result.task) : taskFailure(c, result);
   });

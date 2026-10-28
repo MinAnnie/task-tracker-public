@@ -7,7 +7,9 @@ import {
   generateApiToken,
   hashApiToken,
   listApiTokens,
+  resolveApiTokenActor,
   revokeApiToken,
+  type ApiTokenCaller,
   type ApiTokensDeps,
 } from "./api-tokens.ts";
 import type { AuthenticatedUser } from "./sessions.ts";
@@ -29,7 +31,7 @@ describe("API tokens", () => {
   beforeEach(() => {
     store = new InMemoryApiTokenStore();
     store.projects.push(shop, blog);
-    store.users.push({ id: admin.id, githubLogin: "octocat" });
+    store.users.push({ id: admin.id, githubLogin: "octocat", name: "Octo", avatarUrl: null });
     clock = NOW;
     store.now = () => clock;
     deps = { store, now: () => clock, generateToken: () => TOKEN };
@@ -59,7 +61,7 @@ describe("API tokens", () => {
           id: 1,
           name: "VPS agent",
           prefix: "aaaaaaaa",
-          permission: "read",
+          scope: "read",
           createdAt: NOW,
           createdBy: "octocat",
           lastUsedAt: null,
@@ -87,10 +89,17 @@ describe("API tokens", () => {
       [{ name: "x".repeat(61) }, "name"],
       [{ name: "A", expiresInDays: 0 }, "expiresInDays"],
       [{ name: "A", expiresInDays: 366 }, "expiresInDays"],
-      [{ name: "A", permission: "write" }, "permission"],
+      [{ name: "A", scope: "admin" }, "scope"],
+      [{ name: "A", scope: null }, "scope"],
     ])("rejects %j as invalid %s", async (body, field) => {
       expect(await createApiToken(deps, "shop", body, admin)).toEqual({ status: "invalid", field });
       expect(store.tokens).toEqual([]);
+    });
+
+    it("creates a write token on request", async () => {
+      const result = await createApiToken(deps, "shop", { name: "Agent", scope: "write" }, admin);
+      expect(result).toMatchObject({ status: "created", apiToken: { scope: "write" } });
+      expect(store.tokens[0]?.scope).toBe("write");
     });
 
     it("reports an unknown project", async () => {
@@ -152,13 +161,22 @@ describe("API tokens", () => {
       await createApiToken(deps, "shop", { name: "A", expiresInDays: 30 }, admin);
     });
 
-    it("resolves a valid token to its project-scoped caller", async () => {
+    it("resolves a valid token to its project-scoped caller, with its scope and creator", async () => {
       expect(await authenticateApiToken(deps, TOKEN)).toEqual({
         kind: "api_token",
         tokenId: 1,
         projectId: shop.id,
         project: shop,
+        scope: "read",
+        creator: { id: admin.id, githubLogin: "octocat", name: "Octo", avatarUrl: null },
       });
+    });
+
+    it("resolves write tokens too, and a creator who is gone as null", async () => {
+      deps.generateToken = () => `ttk_${"w".repeat(43)}`;
+      await createApiToken(deps, "shop", { name: "W", scope: "write" }, admin);
+      store.users = [];
+      expect(await authenticateApiToken(deps, `ttk_${"w".repeat(43)}`)).toMatchObject({ scope: "write", creator: null });
     });
 
     it.each([
@@ -198,6 +216,33 @@ describe("API tokens", () => {
       await revokeApiToken(deps, "shop", "1");
       await authenticateApiToken(deps, TOKEN);
       expect(store.touches).toBe(0);
+    });
+  });
+
+  describe("resolveApiTokenActor", () => {
+    const creator = { id: 7, githubLogin: "Mona", name: "Mona", avatarUrl: null };
+    const caller = (overrides: Partial<ApiTokenCaller> = {}): ApiTokenCaller => ({
+      kind: "api_token",
+      tokenId: 1,
+      projectId: shop.id,
+      project: shop,
+      scope: "write",
+      creator,
+      ...overrides,
+    });
+    const members = new Set(["mona"]);
+    const actorDeps = { adminLogins: ["octocat"], isMember: async (login: string) => members.has(login) };
+
+    it("acts as the creator with their current role", async () => {
+      expect(await resolveApiTokenActor(actorDeps, caller())).toEqual({ ...creator, role: "member" });
+      expect(
+        await resolveApiTokenActor(actorDeps, caller({ creator: { ...creator, githubLogin: "OctoCat" } })),
+      ).toEqual({ ...creator, githubLogin: "OctoCat", role: "admin" });
+    });
+
+    it("finds no actor once the creator lost every role or is gone", async () => {
+      expect(await resolveApiTokenActor(actorDeps, caller({ creator: { ...creator, githubLogin: "eve" } }))).toBeUndefined();
+      expect(await resolveApiTokenActor(actorDeps, caller({ creator: null }))).toBeUndefined();
     });
   });
 });

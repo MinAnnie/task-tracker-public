@@ -54,7 +54,7 @@ describe("createDrizzleApiTokenStore (Postgres)", () => {
         name: "VPS",
         tokenHash: hashApiToken(TOKEN),
         tokenPrefix: "QQQQQQQQ",
-        permission: "read",
+        scope: "read",
         createdByUserId: admin.id,
         expiresAt: new Date(NOW.getTime() + 30 * 24 * 60 * 60 * 1000),
         lastUsedAt: null,
@@ -111,6 +111,8 @@ describe("createDrizzleApiTokenStore (Postgres)", () => {
       tokenId: expect.any(Number),
       projectId: shopId,
       project: { id: shopId, slug: "shop", name: "Shop", taskKeyPrefix: "RF", discordInviteUrl: null },
+      scope: "read",
+      creator: { id: admin.id, githubLogin: "OctoCat", name: null, avatarUrl: null },
     });
     clock = new Date(NOW.getTime() + 30_000);
     await authenticateApiToken(deps, TOKEN);
@@ -127,6 +129,21 @@ describe("createDrizzleApiTokenStore (Postgres)", () => {
     await store.touchToken(id, NOW, new Date(NOW.getTime() - 60_000));
     await store.touchToken(id, new Date(NOW.getTime() + 1000), new Date(NOW.getTime() - 59_000));
     expect((await db.select().from(apiTokens))[0]?.lastUsedAt).toEqual(NOW);
+  });
+
+  it("stores write tokens and resolves them with their creator, or null once the creator is gone", async () => {
+    await createApiToken(deps, "shop", { name: "Agent", scope: "write" }, admin);
+    expect((await db.select({ scope: apiTokens.scope }).from(apiTokens))[0]?.scope).toBe("write");
+    expect(await authenticateApiToken(deps, TOKEN)).toMatchObject({ scope: "write", creator: { id: admin.id } });
+
+    await db.delete(users);
+    expect(await authenticateApiToken(deps, TOKEN)).toMatchObject({ scope: "write", creator: null });
+  });
+
+  it("only stores known scopes", async () => {
+    await expect(
+      db.insert(apiTokens).values({ projectId: shopId, name: "x", tokenHash: "h", tokenPrefix: "p", scope: "admin" as "read" }),
+    ).rejects.toThrow();
   });
 
   it("rejects expired tokens", async () => {

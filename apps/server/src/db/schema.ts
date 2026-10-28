@@ -13,15 +13,13 @@ import {
   unique,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
-import { API_TOKEN_PERMISSIONS } from "../domain/api-token.ts";
+import type { ApiTokenScope } from "../domain/api-token.ts";
 import { TASK_PRIORITIES } from "../domain/task-priority.ts";
 import { TASK_STATUSES } from "../domain/task-status.ts";
 
 export const taskStatusEnum = pgEnum("task_status", TASK_STATUSES);
 export const taskPriorityEnum = pgEnum("task_priority", TASK_PRIORITIES);
 export const pullRequestStateEnum = pgEnum("pull_request_state", ["open", "closed", "merged"]);
-/** Only `read` for now; `write` can be added later with `ALTER TYPE ... ADD VALUE`. */
-export const apiTokenPermissionEnum = pgEnum("api_token_permission", API_TOKEN_PERMISSIONS);
 
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 
@@ -231,12 +229,16 @@ export const apiTokens = pgTable(
     tokenHash: text("token_hash").notNull().unique(),
     /** First 8 characters after `ttk_`, shown so admins can recognize a token. */
     tokenPrefix: text("token_prefix").notNull(),
-    permission: apiTokenPermissionEnum("permission").notNull().default("read"),
+    /** `read` or `write` (see API_TOKEN_SCOPES). */
+    scope: text("scope").$type<ApiTokenScope>().notNull().default("read"),
     createdByUserId: integer("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
     createdAt: createdAt(),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
   },
-  (t) => [index("api_tokens_project_id_idx").on(t.projectId)],
+  (t) => [
+    index("api_tokens_project_id_idx").on(t.projectId),
+    check("api_tokens_scope_valid", sql`${t.scope} in ('read', 'write')`),
+  ],
 );

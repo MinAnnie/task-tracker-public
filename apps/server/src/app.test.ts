@@ -70,6 +70,7 @@ const makeApp = (overrides: Partial<AppDeps> = {}) =>
     createStage: async () => ({ status: "project_not_found" }),
     updateStage: async () => ({ status: "project_not_found" }),
     deleteStage: async () => ({ status: "project_not_found" }),
+    resolveApiTokenActor: async () => undefined,
     ...overrides,
   });
 
@@ -1813,7 +1814,10 @@ const tokenCaller: ApiTokenCaller = {
   tokenId: 5,
   projectId: 3,
   project: { id: 3, slug: "shop", name: "Shop", taskKeyPrefix: "RF", discordInviteUrl: null },
+  scope: "read",
+  creator: { id: 2, githubLogin: "mona", name: null, avatarUrl: null },
 };
+const writeCaller: ApiTokenCaller = { ...tokenCaller, scope: "write" };
 const withToken = (caller: ApiTokenCaller = tokenCaller) => ({
   authenticateApiToken: vi.fn(async (token: string) => (token === API_TOKEN ? caller : undefined)),
 });
@@ -1827,12 +1831,21 @@ const bearerRequest = (
     body,
     authorization = `Bearer ${API_TOKEN}`,
     cookie = false,
-  }: { method?: string; body?: string; authorization?: string; cookie?: boolean } = {},
+    origin = true,
+    contentType = "application/json" as string | null,
+  }: {
+    method?: string;
+    body?: string;
+    authorization?: string;
+    cookie?: boolean;
+    origin?: boolean;
+    contentType?: string | null;
+  } = {},
 ) => {
   const headers: Record<string, string> = { authorization };
   if (cookie) headers.cookie = `${SESSION_COOKIE}=session-token`;
-  if (method !== "GET") headers.origin = ORIGIN;
-  if (body !== undefined) headers["content-type"] = "application/json";
+  if (origin && method !== "GET") headers.origin = ORIGIN;
+  if (body !== undefined && contentType !== null) headers["content-type"] = contentType;
   return app.request(path, { method, headers, body });
 };
 
@@ -1932,7 +1945,9 @@ describe("API token (bearer) authentication", () => {
   });
 
   it.each([
-    ...taskMutations,
+    ["POST", "/api/projects/shop/tasks/RF-1/take", "{}"],
+    ["POST", "/api/projects/shop/tasks/RF-1/release", "{}"],
+    ["DELETE", "/api/projects/shop/tasks/RF-1", undefined],
     ["POST", "/api/admin/members", JSON.stringify({ githubLogin: "mona" })],
     ["DELETE", "/api/admin/projects/shop", undefined],
     ["POST", "/api/admin/projects/shop/tokens", JSON.stringify({ name: "x" })],
@@ -2031,7 +2046,7 @@ const tokenView: ApiTokenView = {
   id: 1,
   name: "VPS agent",
   prefix: "abcdefgh",
-  permission: "read",
+  scope: "read",
   createdAt: new Date("2026-05-01T12:00:00Z"),
   createdBy: "octocat",
   lastUsedAt: null,
@@ -2079,7 +2094,7 @@ describe("POST /api/admin/projects/:slug/tokens", () => {
     ["body", "invalid_body"],
     ["name", "invalid_token_name"],
     ["expiresInDays", "invalid_token_expiry"],
-    ["permission", "invalid_token_permission"],
+    ["scope", "invalid_token_scope"],
   ] as const)("maps an invalid %s to 400 %s", async (field, error) => {
     const app = makeApp({ ...asUser(admin), createApiToken: async () => ({ status: "invalid", field }) });
     const res = await post(app, "{}");
@@ -2225,5 +2240,161 @@ describe("DELETE /api/admin/projects/:slug/stages/:id", () => {
     const res = await remove(makeApp({ ...asUser(admin), deleteStage: async () => ({ status }) }));
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: status });
+  });
+});
+
+/** The task writes a `write` token may make, and the use case each one runs. */
+const tokenWriteRoutes = [
+  ["POST", "/api/projects/shop/tasks", JSON.stringify({ title: "Checkout" }), "createTask", 201],
+  ["PATCH", "/api/projects/shop/tasks/RF-1", JSON.stringify({ status: "in_review" }), "updateTask", 200],
+  ["POST", "/api/projects/shop/tasks/RF-1/dependencies", JSON.stringify({ dependsOnKey: "RF-2" }), "addTaskDependency", 201],
+  ["DELETE", "/api/projects/shop/tasks/RF-1/dependencies/RF-2", undefined, "removeTaskDependency", 204],
+] as const;
+
+/** Use cases that succeed, so a test can tell which one ran and with what. */
+const succeedingTaskWrites = () => ({
+  createTask: vi.fn(async () => ({ status: "created" as const, task: taskDetail })),
+  updateTask: vi.fn(async () => ({ status: "ok" as const, task: taskDetail })),
+  addTaskDependency: vi.fn(async () => ({
+    status: "created" as const,
+    dependency: { key: "RF-2", title: "Other", status: "todo" as const },
+  })),
+  removeTaskDependency: vi.fn(async () => ({ status: "removed" as const })),
+  takeTask: vi.fn(),
+  releaseTask: vi.fn(),
+  deleteTask: vi.fn(),
+});
+
+describe("API token (bearer) writes", () => {
+  const writeApp = (overrides: Partial<AppDeps> = {}) => {
+    const spies = succeedingTaskWrites();
+    const resolveApiTokenActor = vi.fn(async () => member as AuthenticatedUser | undefined);
+    const findSessionUser = vi.fn(async () => admin);
+    const app = makeApp({ ...withToken(writeCaller), ...spies, resolveApiTokenActor, findSessionUser, ...overrides });
+    return { app, spies, resolveApiTokenActor, findSessionUser };
+  };
+
+  it.each(tokenWriteRoutes)(
+    "%s %s runs as the token's creator, without Origin or cookie",
+    async (method, path, body, useCase, status) => {
+      const { app, spies, resolveApiTokenActor } = writeApp();
+
+      const res = await bearerRequest(app, path, { method, body, origin: false });
+
+      expect(res.status).toBe(status);
+      expect(spies[useCase]).toHaveBeenCalledTimes(1);
+      expect((spies[useCase].mock.calls[0] as unknown[])[0]).toEqual(member);
+      expect(resolveApiTokenActor).toHaveBeenCalledWith(writeCaller);
+    },
+  );
+
+  it.each(tokenWriteRoutes)("%s %s prefers the bearer token over a session cookie", async (method, path, body, useCase) => {
+    const { app, spies, findSessionUser } = writeApp();
+    await bearerRequest(app, path, { method, body, cookie: true });
+    expect((spies[useCase].mock.calls[0] as unknown[])[0]).toEqual(member);
+    expect(findSessionUser).not.toHaveBeenCalled();
+  });
+
+  it.each(tokenWriteRoutes)("%s %s refuses a read token with 403", async (method, path, body) => {
+    const { app, spies, resolveApiTokenActor } = writeApp(withToken(tokenCaller));
+    const res = await bearerRequest(app, path, { method, body });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "token_not_allowed" });
+    expect(resolveApiTokenActor).not.toHaveBeenCalled();
+    for (const spy of Object.values(spies)) expect(spy).not.toHaveBeenCalled();
+  });
+
+  it.each(tokenWriteRoutes)("%s %s answers 404 for another project", async (method, path, body) => {
+    const { app, spies } = writeApp();
+    const res = await bearerRequest(app, path.replace("/shop/", "/blog/"), { method, body });
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "project_not_found" });
+    for (const spy of Object.values(spies)) expect(spy).not.toHaveBeenCalled();
+  });
+
+  it.each(tokenWriteRoutes)(
+    "%s %s answers 403 once the creator is no longer an admin or member",
+    async (method, path, body) => {
+      const { app, spies } = writeApp({ resolveApiTokenActor: async () => undefined });
+      const res = await bearerRequest(app, path, { method, body });
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ error: "forbidden" });
+      for (const spy of Object.values(spies)) expect(spy).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(tokenWriteRoutes)("%s %s answers 401 for an invalid token", async (method, path, body) => {
+    const { app, spies } = writeApp();
+    const res = await bearerRequest(app, path, { method, body, authorization: `Bearer ttk_${"z".repeat(43)}` });
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: "invalid_token" });
+    expect(res.headers.get("www-authenticate")).toBe("Bearer");
+    for (const spy of Object.values(spies)) expect(spy).not.toHaveBeenCalled();
+  });
+
+  it.each(tokenWriteRoutes.filter(([, , body]) => body !== undefined))(
+    "%s %s still requires a JSON body",
+    async (method, path, body) => {
+      const { app, spies } = writeApp();
+      for (const contentType of [null, "text/plain"]) {
+        const res = await bearerRequest(app, path, { method, body, contentType });
+        expect(res.status).toBe(415);
+        expect(await res.json()).toEqual({ error: "unsupported_media_type" });
+      }
+      const malformed = await bearerRequest(app, path, { method, body: "{nope" });
+      expect(malformed.status).toBe(400);
+      for (const spy of Object.values(spies)) expect(spy).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([[{ assigneeLogin: "mona" }], [{ title: "X", assigneeLogin: null }]])(
+    "refuses to change the assignee of a task (%j)",
+    async (body) => {
+      const { app, spies } = writeApp();
+      const res = await bearerRequest(app, "/api/projects/shop/tasks/RF-1", { method: "PATCH", body: JSON.stringify(body) });
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ error: "token_not_allowed" });
+      expect(spies.updateTask).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ["POST", "/api/projects/shop/tasks/RF-1/take", "{}"],
+    ["POST", "/api/projects/shop/tasks/RF-1/release", "{}"],
+    ["DELETE", "/api/projects/shop/tasks/RF-1", undefined],
+    ["POST", "/api/projects/shop/tasks/", JSON.stringify({ title: "X" })],
+    ["PUT", "/api/projects/shop/tasks/RF-1", JSON.stringify({ title: "X" })],
+    ["POST", "/api/admin/projects/shop/stages", JSON.stringify({ name: "x" })],
+    ["PATCH", "/api/admin/projects/shop", JSON.stringify({ name: "x" })],
+    ["DELETE", "/api/admin/projects/shop/tokens/1", undefined],
+    ["POST", "/auth/logout", undefined],
+  ] as const)("%s %s stays refused for a write token", async (method, path, body) => {
+    const auth = withToken(writeCaller);
+    const spies = { ...succeedingTaskWrites(), ...adminSpies(), endSession: vi.fn() };
+    const app = makeApp({ ...auth, ...spies, ...asUser(admin) });
+
+    const res = await bearerRequest(app, path, { method, body, cookie: true });
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "token_not_allowed" });
+    expect(auth.authenticateApiToken).not.toHaveBeenCalled();
+    for (const spy of Object.values(spies)) expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("rate limits writes like reads", async () => {
+    const { app } = writeApp({ rateLimitApiToken: () => ({ allowed: false, retryAfterSeconds: 30 }) });
+    const res = await bearerRequest(app, "/api/projects/shop/tasks", { method: "POST", body: "{}" });
+    expect(res.status).toBe(429);
+    expect(res.headers.get("retry-after")).toBe("30");
+  });
+
+  it("maps use case failures like for a session", async () => {
+    const { app } = writeApp({ updateTask: async () => ({ status: "dependencies_pending", pendingDependencies: ["RF-2"] }) });
+    const res = await bearerRequest(app, "/api/projects/shop/tasks/RF-1", {
+      method: "PATCH",
+      body: JSON.stringify({ status: "done" }),
+    });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "dependencies_pending", pendingDependencies: ["RF-2"] });
   });
 });

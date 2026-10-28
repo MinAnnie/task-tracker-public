@@ -5,12 +5,14 @@ import {
   isApiTokenFormat,
   normalizeApiTokenExpiresInDays,
   normalizeApiTokenName,
-  normalizeApiTokenPermission,
+  normalizeApiTokenScope,
   normalizeProjectSlug,
-  type ApiTokenPermission,
+  resolveRole,
+  type ApiTokenScope,
   type ApiTokenStatus,
 } from "../domain/index.ts";
 import type { ApiTokenRecord, ApiTokenStore } from "./api-token-store.ts";
+import type { SessionUser } from "./auth-store.ts";
 import type { ProjectRef } from "./project-store.ts";
 import type { AuthenticatedUser } from "./sessions.ts";
 import type { ApiTokenViewer } from "./tasks.ts";
@@ -22,7 +24,7 @@ export interface ApiTokensDeps {
 }
 
 /** Field of the create request that failed validation; `body` means it is not a JSON object. */
-export type ApiTokenField = "body" | "name" | "expiresInDays" | "permission";
+export type ApiTokenField = "body" | "name" | "expiresInDays" | "scope";
 
 /** An API token as shown to admins: metadata only, never the secret or its hash. */
 export interface ApiTokenView {
@@ -30,7 +32,7 @@ export interface ApiTokenView {
   name: string;
   /** First 8 characters after `ttk_`. */
   prefix: string;
-  permission: ApiTokenPermission;
+  scope: ApiTokenScope;
   createdAt: Date;
   createdBy: string | null;
   lastUsedAt: Date | null;
@@ -39,10 +41,16 @@ export interface ApiTokenView {
   status: ApiTokenStatus;
 }
 
-/** A request authenticated by a valid API token: read-only access to one project. */
+/**
+ * A request authenticated by a valid API token: access to one project, read-only or,
+ * with the `write` scope, also a few task writes made as {@link creator}.
+ */
 export interface ApiTokenCaller extends ApiTokenViewer {
   tokenId: number;
   project: ProjectRef;
+  scope: ApiTokenScope;
+  /** The user who created the token; `null` once that user is gone. */
+  creator: SessionUser | null;
 }
 
 type ProjectNotFound = { status: "project_not_found" };
@@ -78,7 +86,7 @@ const toView = (record: ApiTokenRecord, now: Date): ApiTokenView => ({
   id: record.id,
   name: record.name,
   prefix: record.tokenPrefix,
-  permission: record.permission,
+  scope: record.scope,
   createdAt: record.createdAt,
   createdBy: record.createdByLogin,
   lastUsedAt: record.lastUsedAt,
@@ -104,7 +112,7 @@ export async function listApiTokens(
 }
 
 /**
- * Creates a read-only token for one project from an untrusted request body. The
+ * Creates a token for one project (`read` unless `scope` says `write`) from an untrusted request body. The
  * secret is returned here and only here; the store keeps its hash and display prefix.
  */
 export async function createApiToken(
@@ -118,8 +126,8 @@ export async function createApiToken(
   if (name === undefined) return { status: "invalid", field: "name" };
   const expiresInDays = normalizeApiTokenExpiresInDays(body.expiresInDays);
   if (expiresInDays === undefined) return { status: "invalid", field: "expiresInDays" };
-  const permission = normalizeApiTokenPermission(body.permission);
-  if (permission === undefined) return { status: "invalid", field: "permission" };
+  const scope = normalizeApiTokenScope(body.scope);
+  if (scope === undefined) return { status: "invalid", field: "scope" };
 
   const project = await findProject(store, slug);
   if (project === undefined) return { status: "project_not_found" };
@@ -131,7 +139,7 @@ export async function createApiToken(
     name,
     tokenHash: hashApiToken(token),
     tokenPrefix: token.slice(API_TOKEN_TYPE_PREFIX.length, API_TOKEN_TYPE_PREFIX.length + PREFIX_LENGTH),
-    permission,
+    scope,
     createdByUserId: actor.id,
     expiresAt: expiresInDays === null ? null : new Date(at.getTime() + expiresInDays * DAY_MS),
   });
@@ -164,11 +172,33 @@ export async function authenticateApiToken(
   const credential = await store.findTokenByHash(hashApiToken(token));
   if (credential === undefined) return undefined;
   const at = now();
-  if (apiTokenStatus(credential, at) !== "active" || credential.permission !== "read") return undefined;
+  if (apiTokenStatus(credential, at) !== "active") return undefined;
 
   const staleBefore = new Date(at.getTime() - LAST_USED_THROTTLE_MS);
   if (credential.lastUsedAt === null || credential.lastUsedAt.getTime() <= staleBefore.getTime()) {
     await store.touchToken(credential.id, at, staleBefore);
   }
-  return { kind: "api_token", tokenId: credential.id, projectId: credential.project.id, project: credential.project };
+  return {
+    kind: "api_token",
+    tokenId: credential.id,
+    projectId: credential.project.id,
+    project: credential.project,
+    scope: credential.scope,
+    creator: credential.creator,
+  };
+}
+
+/**
+ * The user a write token acts as: its creator, with the role they hold right now
+ * (re-checked on every request, like a session). `undefined` once the creator is gone
+ * or no longer an admin or member.
+ */
+export async function resolveApiTokenActor(
+  { adminLogins, isMember }: { adminLogins: readonly string[]; isMember: (githubLogin: string) => Promise<boolean> },
+  caller: ApiTokenCaller,
+): Promise<AuthenticatedUser | undefined> {
+  const { creator } = caller;
+  if (creator === null) return undefined;
+  const role = resolveRole(creator.githubLogin, adminLogins, await isMember(creator.githubLogin.toLowerCase()));
+  return role === null ? undefined : { ...creator, role };
 }

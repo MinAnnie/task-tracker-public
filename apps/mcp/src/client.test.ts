@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createTrackerClient, TrackerApiError } from "./client.ts";
+import { createTrackerClient, READ_ONLY_TOKEN_MESSAGE, TrackerApiError } from "./client.ts";
 
 const TOKEN = "ttk_secretsecretsecretsecretsecretsecretsecret1";
 
@@ -123,5 +123,76 @@ describe("TrackerClient errors", () => {
     const error = await failure(client.listProjects());
     expect(error.kind).toBe("http");
     expect(error.message).toBe("The Task Tracker API answered with invalid JSON.");
+  });
+});
+
+describe("TrackerClient writes", () => {
+  const detail = { key: "RF-15", title: "Docs" };
+
+  it("creates a task with a JSON POST", async () => {
+    const { client, fetch } = setup(() => json(201, detail));
+    await expect(client.createTask("rf", { title: "Docs", dependsOnKeys: ["RF-1"] })).resolves.toEqual(detail);
+    const [url, init] = fetch.mock.calls[0]!;
+    expect(url).toBe("http://api.test/api/projects/rf/tasks");
+    expect(init?.method).toBe("POST");
+    const headers = new Headers(init?.headers);
+    expect(headers.get("authorization")).toBe(`Bearer ${TOKEN}`);
+    expect(headers.get("content-type")).toBe("application/json");
+    expect(JSON.parse(String(init?.body))).toEqual({ title: "Docs", dependsOnKeys: ["RF-1"] });
+  });
+
+  it("updates a task, adds and removes dependencies", async () => {
+    const { client, fetch } = setup((url, init) =>
+      init.method === "DELETE" ? new Response(null, { status: 204 }) : json(init.method === "POST" ? 201 : 200, detail),
+    );
+    await client.updateTask("rf", "RF/1", { status: "done" });
+    await client.addDependency("rf", "RF-1", "RF-2");
+    await expect(client.removeDependency("rf", "RF-1", "RF/2")).resolves.toBeUndefined();
+    expect(fetch.mock.calls.map(([url, init]) => [init?.method, String(url), init?.body])).toEqual([
+      ["PATCH", "http://api.test/api/projects/rf/tasks/RF%2F1", JSON.stringify({ status: "done" })],
+      ["POST", "http://api.test/api/projects/rf/tasks/RF-1/dependencies", JSON.stringify({ dependsOnKey: "RF-2" })],
+      ["DELETE", "http://api.test/api/projects/rf/tasks/RF-1/dependencies/RF%2F2", undefined],
+    ]);
+  });
+
+  it("explains that a read-only token cannot write", async () => {
+    const { client } = setup(() => json(403, { error: "token_not_allowed" }));
+    const error = await failure(client.createTask("rf", { title: "X" }));
+    expect(error.kind).toBe("read_only");
+    expect(error.message).toBe(READ_ONLY_TOKEN_MESSAGE);
+    expect(READ_ONLY_TOKEN_MESSAGE).toBe(
+      "This token is read-only. Create a Read & write token in Admin → the project → API tokens.",
+    );
+  });
+
+  it("explains a forbidden write", async () => {
+    const { client } = setup(() => json(403, { error: "forbidden" }));
+    expect((await failure(client.updateTask("rf", "RF-1", { status: "done" }))).message).toBe(
+      "Not allowed (403 forbidden): changing a task's status needs the token's creator to be its assignee or an admin, and the creator must still have access to the project.",
+    );
+  });
+
+  it("names the refused field, unknown dependencies and pending dependencies", async () => {
+    const invalid = setup(() => json(400, { error: "invalid_stage" }));
+    const stage = await failure(invalid.client.createTask("rf", { title: "X", stage: "Nope" }));
+    expect(stage.kind).toBe("rejected");
+    expect(stage.message).toBe("The Task Tracker API refused the change (400 invalid_stage).");
+
+    const unknown = setup(() => json(400, { error: "invalid_dependency", unknownKeys: ["RF-9"] }));
+    expect((await failure(unknown.client.createTask("rf", { title: "X" }))).message).toBe(
+      "The Task Tracker API refused the change (400 invalid_dependency). Unknown task keys: RF-9.",
+    );
+
+    const pending = setup(() => json(409, { error: "dependencies_pending", pendingDependencies: ["RF-2", "RF-3"] }));
+    expect((await failure(pending.client.updateTask("rf", "RF-1", { status: "in_progress" }))).message).toBe(
+      "The Task Tracker API refused the change (409 dependencies_pending). Pending dependencies: RF-2, RF-3.",
+    );
+  });
+
+  it("reports a missing dependency on removal", async () => {
+    const { client } = setup(() => json(404, { error: "dependency_not_found" }));
+    expect((await failure(client.removeDependency("rf", "RF-1", "RF-2"))).message).toBe(
+      "RF-1 does not depend on RF-2 in project \"rf\".",
+    );
   });
 });

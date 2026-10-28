@@ -3,7 +3,17 @@ import { InMemoryTaskStore } from "../test/fakes/in-memory-task-store.ts";
 import { RecordingNotifications } from "../test/fakes/recording-notifications.ts";
 import { createApp, type AppDeps } from "./app.ts";
 import type { ApiTokenCaller } from "./application/api-tokens.ts";
-import { getTask, listParticipants, listProjectStages, listTasks, type TasksDeps } from "./application/tasks.ts";
+import {
+  addTaskDependency,
+  createTask,
+  getTask,
+  listParticipants,
+  listProjectStages,
+  listTasks,
+  removeTaskDependency,
+  updateTask,
+  type TasksDeps,
+} from "./application/tasks.ts";
 import { openApiDocument } from "./openapi.ts";
 
 type Schema = Record<string, unknown>;
@@ -58,21 +68,37 @@ function validate(schema: Schema, value: unknown, path = "$"): string[] {
   }
 }
 
-type Operation = { responses: Record<string, { content?: { "application/json": { schema: Schema } } }> };
+type Operation = {
+  description?: string;
+  security?: unknown;
+  requestBody?: unknown;
+  responses: Record<string, { content?: { "application/json": { schema: Schema } } }>;
+};
+type Method = "get" | "post" | "patch" | "delete";
 
-const responseSchema = (path: keyof typeof openApiDocument.paths, status: string): Schema => {
-  const operation = openApiDocument.paths[path].get as unknown as Operation;
+const operationOf = (path: keyof typeof openApiDocument.paths, method: Method): Operation => {
+  const operation = (openApiDocument.paths[path] as Record<string, unknown>)[method];
+  if (operation === undefined) throw new Error(`No ${method} operation for ${path}`);
+  return operation as Operation;
+};
+
+const responseSchema = (path: keyof typeof openApiDocument.paths, status: string, method: Method = "get"): Schema => {
+  const operation = operationOf(path, method);
   const schema = operation.responses[status]?.content?.["application/json"].schema;
   if (schema === undefined) throw new Error(`No ${status} schema for ${path}`);
   return schema;
 };
 
 const TOKEN = `ttk_${"d".repeat(43)}`;
+const WRITE_TOKEN = `ttk_${"w".repeat(43)}`;
+const mona = { id: 2, githubLogin: "mona", name: "Mona", avatarUrl: null };
 const caller: ApiTokenCaller = {
   kind: "api_token",
   tokenId: 1,
   projectId: 3,
   project: { id: 3, slug: "shop", name: "Shop", taskKeyPrefix: "RF", discordInviteUrl: "https://discord.gg/shop" },
+  scope: "read",
+  creator: { id: 2, githubLogin: "mona", name: "Mona", avatarUrl: null },
 };
 
 describe("OpenAPI document", () => {
@@ -152,12 +178,13 @@ describe("OpenAPI document", () => {
       listTasks: (viewer, slug) => listTasks(tasksDeps, viewer, slug),
       listParticipants: (viewer, slug) => listParticipants(tasksDeps, viewer, slug),
       getTask: (viewer, slug, key) => getTask(tasksDeps, viewer, slug, key),
-      createTask: unused,
+      createTask: (user, slug, body) => createTask(tasksDeps, user, slug, body),
       takeTask: unused,
       releaseTask: unused,
-      updateTask: unused,
-      addTaskDependency: unused,
-      removeTaskDependency: unused,
+      updateTask: (user, slug, key, body) => updateTask(tasksDeps, user, slug, key, body),
+      addTaskDependency: (user, slug, key, dependsOnKey) => addTaskDependency(tasksDeps, user, slug, key, dependsOnKey),
+      removeTaskDependency: (user, slug, key, dependsOnKey) =>
+        removeTaskDependency(tasksDeps, user, slug, key, dependsOnKey),
       deleteTask: unused,
       discordApplicationId: undefined,
       completeDiscordLink: unused,
@@ -165,7 +192,11 @@ describe("OpenAPI document", () => {
       unlinkDiscordAccount: unused,
       discordPublicKey: undefined,
       handleDiscordInteraction: unused,
-      authenticateApiToken: async (token) => (token === TOKEN ? caller : undefined),
+      authenticateApiToken: async (token) => {
+        if (token === TOKEN) return caller;
+        return token === WRITE_TOKEN ? { ...caller, scope: "write" } : undefined;
+      },
+      resolveApiTokenActor: async () => ({ ...mona, role: "member" }),
       rateLimitApiToken: () => ({ allowed: true }),
       listApiTokens: unused,
       createApiToken: unused,
@@ -230,6 +261,49 @@ describe("OpenAPI document", () => {
     const notFound = await get("/api/projects/blog/tasks");
     expect(notFound.status).toBe(404);
     expect(validate(responseSchema("/api/projects/{slug}/tasks", "404"), notFound.body)).toEqual([]);
+  });
+
+  const send = async (method: string, path: string, body?: unknown, token = WRITE_TOKEN) => {
+    const headers: Record<string, string> = { authorization: `Bearer ${token}` };
+    if (body !== undefined) headers["content-type"] = "application/json";
+    const res = await app.request(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+    return { status: res.status, body: res.status === 204 ? undefined : ((await res.json()) as unknown) };
+  };
+
+  it("describes the real writes of a write token", async () => {
+    const created = await send("POST", "/api/projects/shop/tasks", { title: "Docs", stage: "backend", dependsOnKeys: ["RF-1"] });
+    expect(created.status).toBe(201);
+    expect(validate(responseSchema("/api/projects/{slug}/tasks", "201", "post"), created.body)).toEqual([]);
+
+    const updated = await send("PATCH", "/api/projects/shop/tasks/RF-3", { priority: "high" });
+    expect(updated.status).toBe(200);
+    expect(validate(responseSchema("/api/projects/{slug}/tasks/{key}", "200", "patch"), updated.body)).toEqual([]);
+
+    const added = await send("POST", "/api/projects/shop/tasks/RF-3/dependencies", { dependsOnKey: "RF-2" });
+    expect(added.status).toBe(201);
+    expect(validate(responseSchema("/api/projects/{slug}/tasks/{key}/dependencies", "201", "post"), added.body)).toEqual([]);
+
+    const removed = await send("DELETE", "/api/projects/shop/tasks/RF-3/dependencies/RF-2");
+    expect(removed.status).toBe(204);
+    expect(operationOf("/api/projects/{slug}/tasks/{key}/dependencies/{dependsOnKey}", "delete").responses["204"]).toBeDefined();
+
+    const refused = await send("POST", "/api/projects/shop/tasks", { title: "Docs" }, TOKEN);
+    expect(refused.status).toBe(403);
+    expect(validate(responseSchema("/api/projects/{slug}/tasks", "403", "post"), refused.body)).toEqual([]);
+  });
+
+  it("documents every write as needing a write token", () => {
+    const writes = [
+      ["/api/projects/{slug}/tasks", "post"],
+      ["/api/projects/{slug}/tasks/{key}", "patch"],
+      ["/api/projects/{slug}/tasks/{key}/dependencies", "post"],
+      ["/api/projects/{slug}/tasks/{key}/dependencies/{dependsOnKey}", "delete"],
+    ] as const;
+    for (const [path, method] of writes) {
+      const operation = operationOf(path, method);
+      expect(operation.security).toEqual([{ bearerAuth: ["write"] }]);
+      expect(operation.description).toContain("write");
+    }
   });
 
   it("would catch an undocumented or mistyped field", () => {

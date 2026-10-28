@@ -29,14 +29,14 @@ export {
 } from "./task-fields.ts";
 export { compareTaskKeys, formatTaskKey, nextTaskKeyNumber, taskKeyNumber } from "./task-key.ts";
 export {
-  API_TOKEN_PERMISSIONS,
+  API_TOKEN_SCOPES,
   API_TOKEN_STATUSES,
   API_TOKEN_TYPE_PREFIX,
   apiTokenStatus,
   isApiTokenFormat,
   normalizeApiTokenExpiresInDays,
   normalizeApiTokenName,
-  normalizeApiTokenPermission,
-  type ApiTokenPermission,
+  normalizeApiTokenScope,
+  type ApiTokenScope,
   type ApiTokenStatus,
 } from "./api-token.ts";

@@ -7,6 +7,17 @@ export const SERVER_NAME = "task-tracker";
 export const SERVER_VERSION = "1.0.0";
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true } as const;
+/** Writes that add data (a task, a dependency). */
+const ADDITIVE = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true } as const;
+/** Writes that change or remove existing data. */
+const CHANGING = { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true } as const;
+
+const WRITE_TOKEN_NOTE =
+  "Needs a Read & write token; with a read-only token it fails with instructions to create one. " +
+  "It acts as the admin who created the token.";
+
+const key = z.string().min(1).describe("Task key such as 'RF-14' (case-insensitive).");
+const dependsOnKey = z.string().min(1).describe("Key of the task depended on, such as 'RF-13'.");
 
 const project = z
   .string()
@@ -23,9 +34,10 @@ export function createServer(deps: ToolDeps): McpServer {
     { name: SERVER_NAME, version: SERVER_VERSION },
     {
       instructions:
-        "Read-only access to a Task Tracker project (tasks, priorities, dependencies, pull requests). " +
+        "Access to a Task Tracker project (tasks, priorities, dependencies, pull requests). " +
         "Use next_tasks to pick what to work on, list_tasks to browse or filter the board, " +
-        "and get_task for the full brief of one task before implementing it.",
+        "and get_task for the full brief of one task before implementing it. " +
+        "create_task, update_task, add_dependency and remove_dependency modify data and need a Read & write token.",
     },
   );
 
@@ -91,10 +103,7 @@ export function createServer(deps: ToolDeps): McpServer {
         "Get one task as an AI-ready markdown brief: title, project, status/priority/stage, assignee, dependencies " +
         "with their statuses, tasks it blocks, linked pull requests, a suggested branch name (feat/<KEY>-<slug>, " +
         "which links PRs to the task), a link, and the full description verbatim. Use it before working on a task.",
-      inputSchema: {
-        key: z.string().min(1).describe("Task key such as 'RF-14' (case-insensitive)."),
-        project,
-      },
+      inputSchema: { key, project },
       annotations: READ_ONLY,
     },
     (args) => tools.getTask(args),
@@ -120,6 +129,81 @@ export function createServer(deps: ToolDeps): McpServer {
       annotations: READ_ONLY,
     },
     (args) => tools.nextTasks(args),
+  );
+
+  server.registerTool(
+    "create_task",
+    {
+      title: "Create task",
+      description:
+        "Modifies data: creates a task in a Task Tracker project and returns its brief (with its new key). " +
+        "It starts unassigned in todo. Optionally depends on existing tasks of the project (dependsOn). " +
+        WRITE_TOKEN_NOTE,
+      inputSchema: {
+        title: z.string().min(1).max(200).describe("1–200 characters."),
+        description: z.string().max(10_000).optional().describe("Markdown, up to 10000 characters."),
+        priority: z.enum(TASK_PRIORITIES).optional().describe("Default medium."),
+        stage: z.string().optional().describe("One of the project's stages (case-insensitive); omit for none."),
+        dependsOn: z
+          .array(z.string().min(1))
+          .max(50)
+          .optional()
+          .describe("Keys of existing tasks of the project the new task depends on."),
+        project,
+      },
+      annotations: ADDITIVE,
+    },
+    (args) => tools.createTask(args),
+  );
+
+  server.registerTool(
+    "update_task",
+    {
+      title: "Update task",
+      description:
+        "Modifies data: changes a task's title, description, priority, stage or status and returns its brief. " +
+        "Pass only the fields to change; null clears the description or stage. Changing the status needs the token's " +
+        "creator to be the assignee or an admin, and starting work needs every dependency done. The assignee " +
+        "cannot be changed with a token. " +
+        WRITE_TOKEN_NOTE,
+      inputSchema: {
+        key,
+        title: z.string().min(1).max(200).optional(),
+        description: z.string().max(10_000).nullable().optional().describe("null clears it."),
+        priority: z.enum(TASK_PRIORITIES).optional(),
+        stage: z.string().nullable().optional().describe("One of the project's stages; null clears it."),
+        status: z.enum(TASK_STATUSES).optional(),
+        project,
+      },
+      annotations: CHANGING,
+    },
+    (args) => tools.updateTask(args),
+  );
+
+  server.registerTool(
+    "add_dependency",
+    {
+      title: "Add dependency",
+      description:
+        "Modifies data: makes a task depend on another task of the same project (it can't be started until that " +
+        "one is done). Refused when it would create a cycle. " +
+        WRITE_TOKEN_NOTE,
+      inputSchema: { key, dependsOn: dependsOnKey, project },
+      annotations: ADDITIVE,
+    },
+    (args) => tools.addDependency(args),
+  );
+
+  server.registerTool(
+    "remove_dependency",
+    {
+      title: "Remove dependency",
+      description:
+        "Modifies data: removes a dependency between two tasks of the same project. " + WRITE_TOKEN_NOTE,
+      inputSchema: { key, dependsOn: dependsOnKey, project },
+      annotations: CHANGING,
+    },
+    (args) => tools.removeDependency(args),
   );
 
   return server;

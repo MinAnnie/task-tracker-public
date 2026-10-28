@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { TrackerApiError, type TrackerClient } from "./client.ts";
+import { READ_ONLY_TOKEN_MESSAGE, TrackerApiError, type TrackerClient } from "./client.ts";
 import { listItem, taskDetail } from "./test-fixtures.ts";
 import { createToolHandlers, MISSING_API_URL_MESSAGE, MISSING_TOKEN_MESSAGE, type ToolResult } from "./tools.ts";
 import type { Project, TaskListItem } from "./types.ts";
@@ -27,6 +27,10 @@ function fakeClient(overrides: Partial<TrackerClient> = {}): TrackerClient {
     listProjects: vi.fn(async () => [RF]),
     listTasks: vi.fn(async () => TASKS),
     getTask: vi.fn(async () => taskDetail()),
+    createTask: vi.fn(async () => taskDetail({ key: "RF-15", title: "Docs" })),
+    updateTask: vi.fn(async () => taskDetail({ status: "in_review" })),
+    addDependency: vi.fn(async () => ({ key: "RF-2", title: "Login", status: "todo" as const })),
+    removeDependency: vi.fn(async () => undefined),
     ...overrides,
   };
 }
@@ -42,6 +46,10 @@ describe("without a token", () => {
       await tools.listTasks({}),
       await tools.getTask({ key: "RF-1" }),
       await tools.nextTasks({}),
+      await tools.createTask({ title: "X" }),
+      await tools.updateTask({ key: "RF-1", status: "done" }),
+      await tools.addDependency({ key: "RF-1", dependsOn: "RF-2" }),
+      await tools.removeDependency({ key: "RF-1", dependsOn: "RF-2" }),
     ]) {
       expect(result.isError).toBe(true);
       expect(text(result)).toBe(MISSING_TOKEN_MESSAGE);
@@ -210,5 +218,81 @@ describe("next_tasks", () => {
     const result = text(await createToolHandlers({ client: fakeClient(), config }).nextTasks({ limit: 1 }));
     expect(result).toContain("2 ready tasks; showing the top 1 by priority.");
     expect(result).not.toContain("RF-5");
+  });
+});
+
+describe("create_task", () => {
+  it("creates the task in the resolved project and returns its brief", async () => {
+    const client = fakeClient();
+    const result = await createToolHandlers({ client, config }).createTask({
+      title: "Docs",
+      priority: "high",
+      stage: "Backend",
+      description: "Write them",
+      dependsOn: [" RF-1 ", "rf-2"],
+    });
+    expect(client.createTask).toHaveBeenCalledWith("rf", {
+      title: "Docs",
+      priority: "high",
+      stage: "Backend",
+      description: "Write them",
+      dependsOnKeys: ["RF-1", "rf-2"],
+    });
+    expect(result.isError).toBeFalsy();
+    expect(text(result)).toMatch(/^Created RF-15\.\n\n# RF-15 — Docs\n/);
+  });
+
+  it("sends only the fields given", async () => {
+    const client = fakeClient();
+    await createToolHandlers({ client, config }).createTask({ title: "Docs" });
+    expect(client.createTask).toHaveBeenCalledWith("rf", { title: "Docs" });
+  });
+
+  it("passes on the read-only token message", async () => {
+    const client = fakeClient({
+      createTask: vi.fn(async () => {
+        throw new TrackerApiError("read_only", READ_ONLY_TOKEN_MESSAGE);
+      }),
+    });
+    const result = await createToolHandlers({ client, config }).createTask({ title: "Docs" });
+    expect(result.isError).toBe(true);
+    expect(text(result)).toBe(READ_ONLY_TOKEN_MESSAGE);
+  });
+});
+
+describe("update_task", () => {
+  it("sends the changed fields, null clearing the stage, and returns the brief", async () => {
+    const client = fakeClient();
+    const result = await createToolHandlers({ client, config }).updateTask({
+      key: " RF-14 ",
+      status: "in_review",
+      stage: null,
+    });
+    expect(client.updateTask).toHaveBeenCalledWith("rf", "RF-14", { status: "in_review", stage: null });
+    expect(text(result)).toMatch(/^Updated RF-14\.\n\n# RF-14 — /);
+  });
+
+  it("asks for at least one change", async () => {
+    const client = fakeClient();
+    const result = await createToolHandlers({ client, config }).updateTask({ key: "RF-14" });
+    expect(result.isError).toBe(true);
+    expect(text(result)).toBe("Pass at least one field to change: title, description, priority, stage or status.");
+    expect(client.updateTask).not.toHaveBeenCalled();
+  });
+});
+
+describe("add_dependency / remove_dependency", () => {
+  it("adds a dependency and says what the task now waits on", async () => {
+    const client = fakeClient();
+    const result = await createToolHandlers({ client, config }).addDependency({ key: "RF-3", dependsOn: " RF-2 " });
+    expect(client.addDependency).toHaveBeenCalledWith("rf", "RF-3", "RF-2");
+    expect(text(result)).toBe("RF-3 now depends on RF-2 — Login (todo).");
+  });
+
+  it("removes a dependency", async () => {
+    const client = fakeClient();
+    const result = await createToolHandlers({ client, config }).removeDependency({ key: "RF-3", dependsOn: "RF-2" });
+    expect(client.removeDependency).toHaveBeenCalledWith("rf", "RF-3", "RF-2");
+    expect(text(result)).toBe("RF-3 no longer depends on RF-2.");
   });
 });

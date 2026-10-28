@@ -2,10 +2,10 @@ import { TrackerApiError, type TrackerClient } from "./client.ts";
 import type { Config } from "./config.ts";
 import { formatNextTasks, formatProjects, formatTaskList, formatTaskPrompt } from "./format.ts";
 import { compareTasks, dependentsOf, filterTasks, isReady, NO_TASK_FILTERS, type Availability } from "./task-filters.ts";
-import type { Project, TaskPriority, TaskStatus } from "./types.ts";
+import type { NewTaskInput, Project, TaskChanges, TaskPriority, TaskStatus } from "./types.ts";
 
 export const MISSING_TOKEN_MESSAGE =
-  "TRACKER_API_TOKEN is not set. Create a read-only API token in Task Tracker (Admin → project → API tokens), " +
+  "TRACKER_API_TOKEN is not set. Create an API token in Task Tracker (Admin → project → API tokens), " +
   "export it as TRACKER_API_TOKEN in the environment that starts this MCP server, and restart it.";
 
 export const MISSING_API_URL_MESSAGE =
@@ -32,6 +32,27 @@ export interface ListTasksArgs {
   assignee?: string;
   search?: string;
   limit?: number;
+}
+
+export interface CreateTaskArgs {
+  project?: string;
+  title: string;
+  description?: string;
+  priority?: TaskPriority;
+  stage?: string;
+  /** Keys of existing tasks the new one depends on. */
+  dependsOn?: string[];
+}
+
+export interface UpdateTaskArgs extends TaskChanges {
+  project?: string;
+  key: string;
+}
+
+export interface DependencyArgs {
+  project?: string;
+  key: string;
+  dependsOn: string;
 }
 
 export interface ToolDeps {
@@ -113,6 +134,39 @@ export function createToolHandlers({ client, config }: ToolDeps) {
           .slice(0, args.limit ?? DEFAULT_NEXT_LIMIT)
           .map((task) => ({ task, unblocks: dependentsOf(tasks, task.key) }));
         return formatNextTasks({ project, entries, readyCount: ready.length });
+      }),
+
+    createTask: ({ project: requested, dependsOn, ...fields }: CreateTaskArgs) =>
+      run(async (api, apiUrl) => {
+        const project = await resolveProject(api, requested);
+        const input: NewTaskInput = { ...fields };
+        if (dependsOn !== undefined) input.dependsOnKeys = dependsOn.map((key) => key.trim());
+        const task = await api.createTask(project.slug, input);
+        return `Created ${task.key}.\n\n${formatTaskPrompt(task, project, apiUrl)}`;
+      }),
+
+    updateTask: ({ project: requested, key, ...changes }: UpdateTaskArgs) =>
+      run(async (api, apiUrl) => {
+        if (Object.keys(changes).length === 0) {
+          throw new ToolError("Pass at least one field to change: title, description, priority, stage or status.");
+        }
+        const project = await resolveProject(api, requested);
+        const task = await api.updateTask(project.slug, key.trim(), changes);
+        return `Updated ${task.key}.\n\n${formatTaskPrompt(task, project, apiUrl)}`;
+      }),
+
+    addDependency: ({ project: requested, key, dependsOn }: DependencyArgs) =>
+      run(async (api) => {
+        const project = await resolveProject(api, requested);
+        const dependency = await api.addDependency(project.slug, key.trim(), dependsOn.trim());
+        return `${key.trim()} now depends on ${dependency.key} — ${dependency.title} (${dependency.status}).`;
+      }),
+
+    removeDependency: ({ project: requested, key, dependsOn }: DependencyArgs) =>
+      run(async (api) => {
+        const project = await resolveProject(api, requested);
+        await api.removeDependency(project.slug, key.trim(), dependsOn.trim());
+        return `${key.trim()} no longer depends on ${dependsOn.trim()}.`;
       }),
   };
 }

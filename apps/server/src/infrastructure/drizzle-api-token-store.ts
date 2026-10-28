@@ -18,7 +18,7 @@ const recordColumns = {
   projectId: apiTokens.projectId,
   name: apiTokens.name,
   tokenPrefix: apiTokens.tokenPrefix,
-  permission: apiTokens.permission,
+  scope: apiTokens.scope,
   createdAt: apiTokens.createdAt,
   createdByLogin: users.githubLogin,
   expiresAt: apiTokens.expiresAt,
@@ -71,14 +71,16 @@ export function createDrizzleApiTokenStore(db: Executor): ApiTokenStore {
       const [row] = await db
         .select({
           id: apiTokens.id,
-          permission: apiTokens.permission,
+          scope: apiTokens.scope,
           expiresAt: apiTokens.expiresAt,
           lastUsedAt: apiTokens.lastUsedAt,
           revokedAt: apiTokens.revokedAt,
           project: projectRefColumns,
+          creator: { id: users.id, githubLogin: users.githubLogin, name: users.name, avatarUrl: users.avatarUrl },
         })
         .from(apiTokens)
         .innerJoin(projects, eq(projects.id, apiTokens.projectId))
+        .leftJoin(users, eq(users.id, apiTokens.createdByUserId))
         .where(eq(apiTokens.tokenHash, tokenHash))
         .limit(1);
       return row;

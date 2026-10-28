@@ -1,8 +1,14 @@
 import { useId, useState, type FormEvent } from "react";
-import type { ApiToken, NewApiTokenInput } from "../../api/types.ts";
+import type { ApiToken, ApiTokenScope, NewApiTokenInput } from "../../api/types.ts";
 import buttons from "../../ui/Button.module.css";
 import styles from "./Admin.module.css";
-import { API_TOKEN_EXPIRY_OPTIONS, apiTokenDetails, parseApiTokenName } from "./admin-model.ts";
+import {
+  API_TOKEN_EXPIRY_OPTIONS,
+  API_TOKEN_SCOPE_LABELS,
+  API_TOKEN_SCOPE_OPTIONS,
+  apiTokenDetails,
+  parseApiTokenName,
+} from "./admin-model.ts";
 
 export interface ApiTokensSectionProps {
   tokens: ApiToken[] | undefined;
@@ -26,6 +32,7 @@ export function ApiTokensSection({ tokens, loadError, onCreate, creating, error,
   const id = useId();
   const [name, setName] = useState("");
   const [expiry, setExpiry] = useState("90");
+  const [scope, setScope] = useState<ApiTokenScope>("read");
   const [localError, setLocalError] = useState<string>();
   const shownError = localError ?? error;
 
@@ -38,8 +45,9 @@ export function ApiTokensSection({ tokens, loadError, onCreate, creating, error,
     }
     setLocalError(undefined);
     try {
-      await onCreate({ name: parsed.name, expiresInDays: expiry === "never" ? null : Number(expiry) });
+      await onCreate({ name: parsed.name, expiresInDays: expiry === "never" ? null : Number(expiry), scope });
       setName("");
+      setScope("read");
     } catch {
       // The container shows the server's reason.
     }
@@ -60,7 +68,9 @@ export function ApiTokensSection({ tokens, loadError, onCreate, creating, error,
                 <code className={`mono ${styles.tokenPrefix}`}>ttk_{token.prefix}…</code>
               </span>
               <span className={styles.chips}>
-                <span className={styles.chip}>Read only</span>
+                <span className={`${styles.chip} ${token.scope === "write" ? styles.chipWarn : ""}`}>
+                  {API_TOKEN_SCOPE_LABELS[token.scope]}
+                </span>
                 <span className={`${styles.chip} ${token.status === "active" ? styles.chipOk : styles.chipWarn}`}>
                   {STATUS_LABELS[token.status]}
                 </span>
@@ -89,7 +99,8 @@ export function ApiTokensSection({ tokens, loadError, onCreate, creating, error,
           API tokens
         </h2>
         <p className={styles.cardHint}>
-          Let scripts and AI agents read this project’s tasks without signing in. Tokens are read only.
+          Let scripts and AI agents read this project’s tasks without signing in. Read & write tokens can also create
+          and edit tasks.
         </p>
       </div>
       {list}
@@ -126,10 +137,33 @@ export function ApiTokensSection({ tokens, loadError, onCreate, creating, error,
             ))}
           </select>
         </div>
+        <fieldset role="radiogroup" aria-labelledby={`${id}-access`} className={styles.choice}>
+          <legend id={`${id}-access`} className={styles.choiceLegend}>
+            Access
+          </legend>
+          {API_TOKEN_SCOPE_OPTIONS.map((option) => (
+            <label key={option.value} className={styles.choiceOption}>
+              <input
+                type="radio"
+                name={`${id}-scope`}
+                value={option.value}
+                checked={scope === option.value}
+                onChange={() => setScope(option.value)}
+              />
+              {option.label}
+            </label>
+          ))}
+        </fieldset>
         <button type="submit" className={buttons.button} disabled={creating}>
           {creating ? "Creating…" : "Create token"}
         </button>
       </form>
+      {scope === "write" && (
+        <p className={styles.warning}>
+          This token can create and edit tasks and their dependencies as you, with your access. Give it only to tools
+          you trust.
+        </p>
+      )}
       {shownError && (
         <p id={`${id}-error`} role="alert" className={styles.fieldError}>
           {shownError}

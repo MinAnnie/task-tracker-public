@@ -16,7 +16,7 @@ export interface StoredApiToken extends NewApiToken {
 export class InMemoryApiTokenStore implements ApiTokenStore {
   projects: ProjectRef[] = [];
   /** Users who can create tokens, by id. */
-  users: { id: number; githubLogin: string }[] = [];
+  users: { id: number; githubLogin: string; name?: string | null; avatarUrl?: string | null }[] = [];
   tokens: StoredApiToken[] = [];
   /** Every `touchToken` call that changed a row. */
   touches = 0;
@@ -58,8 +58,12 @@ export class InMemoryApiTokenStore implements ApiTokenStore {
     const token = this.tokens.find((t) => t.tokenHash === tokenHash);
     const project = token && this.projects.find((p) => p.id === token.projectId);
     if (token === undefined || project === undefined) return undefined;
-    const { id, permission, expiresAt, lastUsedAt, revokedAt } = token;
-    return { id, permission, expiresAt, lastUsedAt, revokedAt, project };
+    const { id, scope, expiresAt, lastUsedAt, revokedAt } = token;
+    const user = this.users.find((u) => u.id === token.createdByUserId);
+    const creator = user
+      ? { id: user.id, githubLogin: user.githubLogin, name: user.name ?? null, avatarUrl: user.avatarUrl ?? null }
+      : null;
+    return { id, scope, expiresAt, lastUsedAt, revokedAt, project, creator };
   }
 
   async touchToken(tokenId: number, at: Date, staleBefore: Date) {
@@ -76,7 +80,7 @@ export class InMemoryApiTokenStore implements ApiTokenStore {
       projectId: t.projectId,
       name: t.name,
       tokenPrefix: t.tokenPrefix,
-      permission: t.permission,
+      scope: t.scope,
       createdAt: t.createdAt,
       createdByLogin: this.users.find((u) => u.id === t.createdByUserId)?.githubLogin ?? null,
       expiresAt: t.expiresAt,

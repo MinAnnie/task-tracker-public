@@ -1,9 +1,9 @@
 /**
- * What an API token may do. Only `read` exists for now; adding `write` later means
- * extending this list and the `api_token_permission` database enum together.
+ * What an API token may do: `read` the project, or also `write` a few task routes
+ * (create, edit, dependencies) acting as the admin who created it.
  */
-export const API_TOKEN_PERMISSIONS = ["read"] as const;
-export type ApiTokenPermission = (typeof API_TOKEN_PERMISSIONS)[number];
+export const API_TOKEN_SCOPES = ["read", "write"] as const;
+export type ApiTokenScope = (typeof API_TOKEN_SCOPES)[number];
 
 export const API_TOKEN_STATUSES = ["active", "expired", "revoked"] as const;
 export type ApiTokenStatus = (typeof API_TOKEN_STATUSES)[number];
@@ -34,10 +34,10 @@ export function normalizeApiTokenExpiresInDays(value: unknown): number | null | 
     : undefined;
 }
 
-/** Only `read` is accepted for now; an absent value means `read`. */
-export function normalizeApiTokenPermission(value: unknown): ApiTokenPermission | undefined {
+/** `read` or `write`; an absent value means `read`. */
+export function normalizeApiTokenScope(value: unknown): ApiTokenScope | undefined {
   if (value === undefined) return "read";
-  return API_TOKEN_PERMISSIONS.find((permission) => permission === value);
+  return API_TOKEN_SCOPES.find((scope) => scope === value);
 }
 
 /** Whether `value` is shaped like an API token, so malformed ones skip the database. */

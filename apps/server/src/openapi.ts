@@ -20,6 +20,25 @@ const commonErrors = {
   },
 };
 
+/** Responses every write shares, on top of {@link commonErrors}. */
+const writeErrors = {
+  "403": error(
+    "A read-only token (`token_not_allowed`), or a token whose creator is no longer an admin or member of the project (`forbidden`).",
+  ),
+  "415": error("The body is not declared as `application/json` (`unsupported_media_type`)."),
+};
+
+const WRITE_NOTE =
+  "Needs a write token (scope `write`): it acts as the admin who created it, with that user's current access, " +
+  "and notifications name that user. Read-only tokens get 403 `token_not_allowed`.";
+
+const writeSecurity = [{ bearerAuth: ["write"] }];
+const jsonBody = (schema: Record<string, unknown>) => ({
+  required: true,
+  content: { "application/json": { schema } },
+});
+const keyParameter = { name: "key", in: "path", required: true, schema: { type: "string" }, example: "RF-14" };
+
 const slugParameter = {
   name: "slug",
   in: "path",
@@ -29,8 +48,8 @@ const slugParameter = {
 };
 
 /**
- * Hand-written OpenAPI 3.1 description of the endpoints a project-scoped, read-only
- * API token may call. `openapi.test.ts` checks real responses against these schemas.
+ * Hand-written OpenAPI 3.1 description of the endpoints a project-scoped API token may
+ * call (reads with any token, a few task writes with a `write` token). `openapi.test.ts` checks real responses against these schemas.
  */
 export const openApiDocument = {
   openapi: "3.1.0",
@@ -38,10 +57,11 @@ export const openApiDocument = {
     title: "Task Tracker API",
     version: "1.0.0",
     description:
-      "Read-only access to one project's tasks with an API token created by an admin " +
+      "Access to one project's tasks with an API token created by an admin " +
       "(Admin → project → API tokens). Send it as `Authorization: Bearer ttk_...`. " +
-      "Every other endpoint, and every non-GET request, rejects bearer tokens with 403 `token_not_allowed`. " +
-      "Each token may make 120 requests per minute.",
+      "Every token reads; a token with the `write` scope may also create and edit tasks and their dependencies " +
+      "(the operations marked as such). Every other endpoint and request rejects bearer tokens with 403 " +
+      "`token_not_allowed`. Each token may make 120 requests per minute.",
   },
   servers: [{ url: "/" }],
   security: [{ bearerAuth: [] }],
@@ -73,18 +93,83 @@ export const openApiDocument = {
           ...commonErrors,
         },
       },
+      post: {
+        operationId: "createTask",
+        summary: "Creates a task keyed <PREFIX>-<n>.",
+        description: `${WRITE_NOTE} With an assignee it starts in_progress (409 \`dependencies_pending\` while a dependency is not done), otherwise todo.`,
+        security: writeSecurity,
+        parameters: [slugParameter],
+        requestBody: jsonBody(ref("NewTask")),
+        responses: {
+          "201": { description: "The created task.", content: { "application/json": { schema: ref("TaskDetail") } } },
+          "400": error(
+            "Invalid field (`invalid_*`, `invalid_stage`, `invalid_assignee`), or unknown dependencies (`invalid_dependency` with `unknownKeys`).",
+          ),
+          ...commonErrors,
+          ...writeErrors,
+          "409": error("Assigned while a dependency is pending (`dependencies_pending` with `pendingDependencies`)."),
+        },
+      },
     },
     "/api/projects/{slug}/tasks/{key}": {
       get: {
         operationId: "getTask",
         summary: "One task by key (case-insensitive), with dependencies, dependents and pull requests.",
-        parameters: [
-          slugParameter,
-          { name: "key", in: "path", required: true, schema: { type: "string" }, example: "RF-14" },
-        ],
+        parameters: [slugParameter, keyParameter],
         responses: {
           "200": { description: "The task.", content: { "application/json": { schema: ref("TaskDetail") } } },
           ...commonErrors,
+        },
+      },
+      patch: {
+        operationId: "updateTask",
+        summary: "Edits a task's title, description, priority, stage or status.",
+        description: `${WRITE_NOTE} Changing the status needs the token's creator to be the assignee or an admin; starting work (in_progress, in_review, done) needs every dependency done. Tokens cannot change the assignee (\`assigneeLogin\` answers 403 \`token_not_allowed\`).`,
+        security: writeSecurity,
+        parameters: [slugParameter, keyParameter],
+        requestBody: jsonBody(ref("TaskChanges")),
+        responses: {
+          "200": { description: "The updated task.", content: { "application/json": { schema: ref("TaskDetail") } } },
+          "400": error("Invalid field (`invalid_*`, `invalid_stage`) or nothing to change (`empty_update`)."),
+          ...commonErrors,
+          ...writeErrors,
+          "409": error("Starting work while a dependency is pending (`dependencies_pending` with `pendingDependencies`)."),
+        },
+      },
+    },
+    "/api/projects/{slug}/tasks/{key}/dependencies": {
+      post: {
+        operationId: "addDependency",
+        summary: "Makes the task depend on another task of the project.",
+        description: WRITE_NOTE,
+        security: writeSecurity,
+        parameters: [slugParameter, keyParameter],
+        requestBody: jsonBody(ref("NewDependency")),
+        responses: {
+          "201": { description: "The task depended on.", content: { "application/json": { schema: ref("TaskLink") } } },
+          "400": error("A task cannot depend on itself (`self_dependency`), or the key is missing (`invalid_task_key`)."),
+          ...commonErrors,
+          ...writeErrors,
+          "409": error("Already a dependency (`dependency_exists`), or it would close a cycle (`dependency_cycle`)."),
+        },
+      },
+    },
+    "/api/projects/{slug}/tasks/{key}/dependencies/{dependsOnKey}": {
+      delete: {
+        operationId: "removeDependency",
+        summary: "Removes a dependency of the task.",
+        description: WRITE_NOTE,
+        security: writeSecurity,
+        parameters: [
+          slugParameter,
+          keyParameter,
+          { name: "dependsOnKey", in: "path", required: true, schema: { type: "string" }, example: "RF-13" },
+        ],
+        responses: {
+          "204": { description: "Removed." },
+          ...commonErrors,
+          "404": error("No such project, task or dependency (`project_not_found`, `task_not_found`, `dependency_not_found`)."),
+          "403": writeErrors["403"],
         },
       },
     },
@@ -122,7 +207,8 @@ export const openApiDocument = {
       bearerAuth: {
         type: "http",
         scheme: "bearer",
-        description: "A project-scoped API token (`ttk_` followed by 43 base64url characters).",
+        description:
+          "A project-scoped API token (`ttk_` followed by 43 base64url characters). Operations listing the `write` scope need a write token.",
       },
     },
     schemas: {
@@ -260,6 +346,38 @@ export const openApiDocument = {
           createdAt: timestamp,
           updatedAt: { ...timestamp, description: "When any field of the task last changed." },
         },
+      },
+      NewTask: {
+        type: "object",
+        required: ["title"],
+        properties: {
+          title: { type: "string", description: "1–200 characters." },
+          description: { type: "string", description: "Up to 10000 characters." },
+          priority: ref("TaskPriority"),
+          stage: { type: "string", description: "One of the project's stages (GET /api/projects/{slug}/stages)." },
+          assigneeLogin: { type: "string", description: "A project participant who signed in at least once." },
+          dependsOnKeys: {
+            ...strings,
+            maxItems: 50,
+            description: "Keys of existing tasks of the project the new task depends on (case-insensitive).",
+          },
+        },
+      },
+      TaskChanges: {
+        type: "object",
+        description: "Only the fields to change; at least one.",
+        properties: {
+          title: { type: "string" },
+          description: nullable({ type: "string" }),
+          priority: ref("TaskPriority"),
+          stage: { ...nullable({ type: "string" }), description: "One of the project's stages, or null." },
+          status: ref("TaskStatus"),
+        },
+      },
+      NewDependency: {
+        type: "object",
+        required: ["dependsOnKey"],
+        properties: { dependsOnKey: { type: "string", example: "RF-13" } },
       },
       Error: {
         type: "object",

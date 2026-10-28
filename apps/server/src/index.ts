@@ -1,6 +1,12 @@
 import { serve } from "@hono/node-server";
 import { createApp } from "./app.ts";
-import { authenticateApiToken, createApiToken, listApiTokens, revokeApiToken } from "./application/api-tokens.ts";
+import {
+  authenticateApiToken,
+  createApiToken,
+  listApiTokens,
+  resolveApiTokenActor,
+  revokeApiToken,
+} from "./application/api-tokens.ts";
 import { completeGithubLogin } from "./application/complete-github-login.ts";
 import { resolveDiscordCaller } from "./application/discord-caller.ts";
 import { completeDiscordLink, findDiscordAccount, unlinkDiscordAccount } from "./application/discord-link.ts";
@@ -151,6 +157,8 @@ const app = createApp({
   listApiTokens: (slug) => listApiTokens(apiTokensDeps, slug),
   createApiToken: (slug, body, actor) => createApiToken(apiTokensDeps, slug, body, actor),
   revokeApiToken: (slug, tokenId) => revokeApiToken(apiTokensDeps, slug, tokenId),
+  resolveApiTokenActor: (caller) =>
+    resolveApiTokenActor({ adminLogins, isMember: (githubLogin) => authStore.isMember(githubLogin) }, caller),
   listProjectStages: (viewer, slug) => listProjectStages(tasksDeps, viewer, slug),
   listStages: (slug) => listStages(stagesDeps, slug),
   createStage: (slug, body) => createStage(stagesDeps, slug, body),

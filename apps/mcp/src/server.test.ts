@@ -18,17 +18,30 @@ const fake: TrackerClient = {
   listProjects: vi.fn(async () => [{ id: 1, slug: "rf", name: "Rental Fleet", taskKeyPrefix: "RF" }]),
   listTasks: vi.fn(async () => [listItem({ key: "RF-1", title: "Board" })]),
   getTask: vi.fn(),
+  createTask: vi.fn(),
+  updateTask: vi.fn(),
+  addDependency: vi.fn(),
+  removeDependency: vi.fn(),
 };
 
 describe("MCP server", () => {
-  it("exposes the four read-only tools with descriptions and schemas", async () => {
+  it("exposes the four read-only tools and four writing ones, with descriptions and schemas", async () => {
     const mcp = await connect(fake);
     const { tools } = await mcp.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual(["get_task", "list_projects", "list_tasks", "next_tasks"]);
+    const reads = ["get_task", "list_projects", "list_tasks", "next_tasks"];
+    const writes = ["add_dependency", "create_task", "remove_dependency", "update_task"];
+    expect(tools.map((t) => t.name).sort()).toEqual([...writes, ...reads].sort());
     for (const tool of tools) {
       expect(tool.description?.length).toBeGreaterThan(40);
-      expect(tool.annotations?.readOnlyHint).toBe(true);
+      expect(tool.annotations?.readOnlyHint).toBe(!writes.includes(tool.name));
+      if (writes.includes(tool.name)) {
+        expect(tool.description).toMatch(/^Modifies data/);
+        expect(tool.description).toContain("Read & write token");
+      }
     }
+    expect(tools.find((t) => t.name === "create_task")!.inputSchema.required).toEqual(["title"]);
+    expect(tools.find((t) => t.name === "update_task")!.inputSchema.required).toEqual(["key"]);
+    expect(tools.find((t) => t.name === "add_dependency")!.inputSchema.required).toEqual(["key", "dependsOn"]);
     const listTasks = tools.find((t) => t.name === "list_tasks")!;
     expect(Object.keys(listTasks.inputSchema.properties ?? {}).sort()).toEqual(
       ["assignee", "availability", "limit", "priority", "project", "search", "stage", "status"].sort(),

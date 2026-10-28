@@ -1,5 +1,5 @@
 import { isApiError } from "../../api/client.ts";
-import type { ApiToken, NewProjectInput } from "../../api/types.ts";
+import type { ApiToken, ApiTokenScope, NewProjectInput } from "../../api/types.ts";
 import { errorMessage } from "../../lib/error-messages.ts";
 
 /** The server's GitHub username rule: 1–39 alphanumerics or single hyphens, no hyphen at either end. */
@@ -182,6 +182,14 @@ export function parseApiTokenName(raw: string): { name: string } | { error: stri
   const name = raw.trim();
   return name.length >= 1 && name.length <= API_TOKEN_NAME_MAX ? { name } : { error: INVALID_API_TOKEN_NAME };
 }
+
+/** Choices of the token access radio group; read only is the default. */
+export const API_TOKEN_SCOPE_OPTIONS = [
+  { value: "read", label: "Read only" },
+  { value: "write", label: "Read & write" },
+] as const satisfies readonly { value: ApiTokenScope; label: string }[];
+
+export const API_TOKEN_SCOPE_LABELS: Record<ApiTokenScope, string> = { read: "Read only", write: "Read & write" };
 
 /** Facts shown under a token: who created it and when, last use, expiry and revocation. */
 export function apiTokenDetails(token: ApiToken): string[] {

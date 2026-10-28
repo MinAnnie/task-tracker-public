@@ -4,7 +4,7 @@ import {
   isApiTokenFormat,
   normalizeApiTokenExpiresInDays,
   normalizeApiTokenName,
-  normalizeApiTokenPermission,
+  normalizeApiTokenScope,
 } from "./api-token.ts";
 
 describe("normalizeApiTokenName", () => {
@@ -37,14 +37,15 @@ describe("normalizeApiTokenExpiresInDays", () => {
   });
 });
 
-describe("normalizeApiTokenPermission", () => {
-  it("accepts read, the default", () => {
-    expect(normalizeApiTokenPermission(undefined)).toBe("read");
-    expect(normalizeApiTokenPermission("read")).toBe("read");
+describe("normalizeApiTokenScope", () => {
+  it("accepts read, the default, and write", () => {
+    expect(normalizeApiTokenScope(undefined)).toBe("read");
+    expect(normalizeApiTokenScope("read")).toBe("read");
+    expect(normalizeApiTokenScope("write")).toBe("write");
   });
 
-  it.each([["write"], ["admin"], [null], [1]])("rejects %j", (input) => {
-    expect(normalizeApiTokenPermission(input)).toBeUndefined();
+  it.each([["Write"], ["admin"], [null], [1]])("rejects %j", (input) => {
+    expect(normalizeApiTokenScope(input)).toBeUndefined();
   });
 });
 
