@@ -11,7 +11,12 @@ const error = (description: string) => ({
 });
 
 const commonErrors = {
-  "401": error("Missing, malformed, unknown, revoked or expired token (`invalid_token`)."),
+  "401": error(
+    "Missing, malformed, unknown, revoked or expired token, or a personal token whose owner is no longer an admin or member (`invalid_token`).",
+  ),
+  "403": error(
+    "A personal token whose owner cannot access this project (`forbidden`), exactly like their signed-in session.",
+  ),
   "404": error("No such project for this token (`project_not_found`), or no such task (`task_not_found`)."),
   "429": {
     description: "Too many requests for this token (`rate_limited`).",
@@ -23,33 +28,58 @@ const commonErrors = {
 /** Responses every write shares, on top of {@link commonErrors}. */
 const writeErrors = {
   "403": error(
-    "A read-only token (`token_not_allowed`), or a token whose creator is no longer an admin or member of the project (`forbidden`).",
+    "A read-only token, or a personal write token whose owner is no longer an admin (`token_not_allowed`); a project token whose creator is no longer an admin or member of the project, or a personal token whose owner cannot access it (`forbidden`).",
   ),
   "415": error("The body is not declared as `application/json` (`unsupported_media_type`)."),
 };
 
 const WRITE_NOTE =
-  "Needs a write token (scope `write`): it acts as the admin who created it, with that user's current access, " +
-  "and notifications name that user. Read-only tokens get 403 `token_not_allowed`.";
+  "Needs a write token (scope `write`): it acts as the admin who created it (a project token) or owns it " +
+  "(a personal token), with that user's current access, and notifications name that user. " +
+  "Read-only tokens get 403 `token_not_allowed`.";
 
 const writeSecurity = [{ bearerAuth: ["write"] }];
 const jsonBody = (schema: Record<string, unknown>) => ({
   required: true,
   content: { "application/json": { schema } },
 });
+const ACCOUNT_NOTE =
+  "Cookie session only (same-origin JSON requests from the web app); any request with an `Authorization` " +
+  "header answers 403 `token_not_allowed`. Open to every signed-in user, who only ever sees their own tokens.";
+const cookieSecurity = [{ cookieAuth: [] }];
+const accountErrors = {
+  "401": error("Not signed in (`unauthenticated`)."),
+  "403": error("A foreign Origin (`invalid_origin`), or an `Authorization` header (`token_not_allowed`)."),
+};
+const apiTokenProperties = {
+  id: { type: "integer" },
+  name: { type: "string" },
+  prefix: { type: "string", description: "First 8 characters after `ttk_`." },
+  scope: { type: "string", enum: ["read", "write"] },
+  createdAt: timestamp,
+  createdBy: nullable({ type: "string" }),
+  lastUsedAt: nullable(timestamp),
+  expiresAt: nullable(timestamp),
+  revokedAt: nullable(timestamp),
+  status: { type: "string", enum: ["active", "expired", "revoked"] },
+};
+
 const keyParameter = { name: "key", in: "path", required: true, schema: { type: "string" }, example: "RF-14" };
 
 const slugParameter = {
   name: "slug",
   in: "path",
   required: true,
-  description: "Slug of the token's project; any other slug answers 404.",
+  description:
+    "Slug of the project. A project token only reaches its own project (any other slug answers 404); " +
+    "a personal token reaches every project its owner can access.",
   schema: { type: "string" },
 };
 
 /**
- * Hand-written OpenAPI 3.1 description of the endpoints a project-scoped API token may
- * call (reads with any token, a few task writes with a `write` token). `openapi.test.ts` checks real responses against these schemas.
+ * Hand-written OpenAPI 3.1 description of the endpoints an API token may call (reads with
+ * any token, a few task writes with a `write` token), plus the cookie-session endpoints
+ * that manage personal tokens. `openapi.test.ts` checks real responses against these schemas.
  */
 export const openApiDocument = {
   openapi: "3.1.0",
@@ -57,8 +87,12 @@ export const openApiDocument = {
     title: "Task Tracker API",
     version: "1.0.0",
     description:
-      "Access to one project's tasks with an API token created by an admin " +
-      "(Admin → project → API tokens). Send it as `Authorization: Bearer ttk_...`. " +
+      "Access to tasks with an API token, sent as `Authorization: Bearer ttk_...`. " +
+      "A project token is created by an admin (Admin → project → API tokens) and reaches that one project. " +
+      "A personal token is created by any signed-in user for themselves (account menu → API tokens) and works " +
+      "with every project they can access, re-checked on every request: all projects for admins, the projects " +
+      "a member belongs to (others answer 403 `forbidden`, like their session). Personal tokens of members are " +
+      "read only. " +
       "Every token reads; a token with the `write` scope may also create and edit tasks and their dependencies " +
       "(the operations marked as such). Every other endpoint and request rejects bearer tokens with 403 " +
       "`token_not_allowed`. Each token may make 120 requests per minute.",
@@ -69,7 +103,7 @@ export const openApiDocument = {
     "/api/projects": {
       get: {
         operationId: "listProjects",
-        summary: "The token's project (a one-element list).",
+        summary: "The token's project (a one-element list) for a project token; every project the owner can access for a personal token.",
         responses: {
           "200": {
             description: "Projects visible to the caller.",
@@ -201,6 +235,54 @@ export const openApiDocument = {
         },
       },
     },
+    "/api/account/tokens": {
+      get: {
+        operationId: "listPersonalTokens",
+        summary: "The signed-in user's own personal tokens, newest first.",
+        description: ACCOUNT_NOTE,
+        security: cookieSecurity,
+        responses: {
+          "200": {
+            description: "The personal tokens; never their secrets.",
+            content: { "application/json": { schema: { type: "array", items: ref("ApiToken") } } },
+          },
+          ...accountErrors,
+        },
+      },
+      post: {
+        operationId: "createPersonalToken",
+        summary: "Creates a personal token for the signed-in user; the secret is returned only here.",
+        description: `${ACCOUNT_NOTE} Members may only create \`read\` tokens; admins may also choose \`write\`.`,
+        security: cookieSecurity,
+        requestBody: jsonBody(ref("NewApiToken")),
+        responses: {
+          "201": {
+            description: "The created token with its secret (`Cache-Control: no-store`).",
+            content: { "application/json": { schema: ref("CreatedApiToken") } },
+          },
+          "400": error("Invalid field (`invalid_body`, `invalid_token_name`, `invalid_token_expiry`, `invalid_token_scope`) or `malformed_json`."),
+          ...accountErrors,
+          "403": error(
+            "A member asked for a `write` token (`token_scope_not_allowed`), a foreign Origin (`invalid_origin`), or an `Authorization` header (`token_not_allowed`).",
+          ),
+          "415": error("The body is not declared as `application/json` (`unsupported_media_type`)."),
+        },
+      },
+    },
+    "/api/account/tokens/{id}": {
+      delete: {
+        operationId: "revokePersonalToken",
+        summary: "Revokes one of the signed-in user's personal tokens (idempotent).",
+        description: ACCOUNT_NOTE,
+        security: cookieSecurity,
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }],
+        responses: {
+          "204": { description: "Revoked." },
+          ...accountErrors,
+          "404": error("No such token among the user's personal tokens (`token_not_found`)."),
+        },
+      },
+    },
   },
   components: {
     securitySchemes: {
@@ -208,7 +290,13 @@ export const openApiDocument = {
         type: "http",
         scheme: "bearer",
         description:
-          "A project-scoped API token (`ttk_` followed by 43 base64url characters). Operations listing the `write` scope need a write token.",
+          "A project or personal API token (`ttk_` followed by 43 base64url characters). Operations listing the `write` scope need a write token.",
+      },
+      cookieAuth: {
+        type: "apiKey",
+        in: "cookie",
+        name: "session",
+        description: "The web app's session cookie (sign in with GitHub). API tokens are refused here.",
       },
     },
     schemas: {
@@ -378,6 +466,30 @@ export const openApiDocument = {
         type: "object",
         required: ["dependsOnKey"],
         properties: { dependsOnKey: { type: "string", example: "RF-13" } },
+      },
+      ApiToken: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "name", "prefix", "scope", "createdAt", "createdBy", "lastUsedAt", "expiresAt", "revokedAt", "status"],
+        properties: apiTokenProperties,
+      },
+      CreatedApiToken: {
+        type: "object",
+        additionalProperties: false,
+        required: ["token", "id", "name", "prefix", "scope", "createdAt", "createdBy", "lastUsedAt", "expiresAt", "revokedAt", "status"],
+        properties: {
+          token: { type: "string", description: "The secret (`ttk_...`). Shown once; only its hash is stored." },
+          ...apiTokenProperties,
+        },
+      },
+      NewApiToken: {
+        type: "object",
+        required: ["name"],
+        properties: {
+          name: { type: "string", description: "1–60 characters." },
+          expiresInDays: { ...nullable({ type: "integer" }), description: "1–365 days; null or absent never expires." },
+          scope: { type: "string", enum: ["read", "write"], description: "Defaults to read; write is for admins only." },
+        },
       },
       Error: {
         type: "object",

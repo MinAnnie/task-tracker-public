@@ -72,8 +72,8 @@ const errorBody = async (response: Response): Promise<ErrorBody> => {
 };
 
 const FORBIDDEN_WRITE =
-  "Not allowed (403 forbidden): changing a task's status needs the token's creator to be its assignee or an admin, " +
-  "and the creator must still have access to the project.";
+  "Not allowed (403 forbidden): changing a task's status needs the token's creator (or owner) to be its assignee " +
+  "or an admin, and that user must still have access to the project.";
 
 const withCode = (status: number, code: string | undefined) => (code ? `${status} ${code}` : `${status}`);
 
@@ -106,6 +106,13 @@ export function createTrackerClient({
       case 403:
         if (context.write && code === "token_not_allowed") return new TrackerApiError("read_only", READ_ONLY_TOKEN_MESSAGE);
         if (context.write && code === "forbidden") return new TrackerApiError("forbidden", FORBIDDEN_WRITE);
+        if (code === "forbidden" && context.slug !== undefined) {
+          return new TrackerApiError(
+            "forbidden",
+            `The owner of this personal token cannot access project "${context.slug}" (403 forbidden). ` +
+              "Use list_projects to see the projects it can access.",
+          );
+        }
         return new TrackerApiError(
           "forbidden",
           `The token is not allowed to call this endpoint (${withCode(403, code)}).`,

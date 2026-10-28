@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from "react-router";
+import { AccountTokensContainer } from "../features/account/AccountTokensContainer.tsx";
 import { AdminLayout } from "../features/admin/AdminLayout.tsx";
 import { MembersContainer } from "../features/admin/MembersContainer.tsx";
 import { ProjectSettingsContainer } from "../features/admin/ProjectSettingsContainer.tsx";
@@ -24,6 +25,7 @@ export function AppRoutes() {
             <Route path="tasks/new" element={<NewTaskContainer />} />
           </Route>
           <Route path="projects/:slug/tasks/:key" element={<TaskDetailContainer />} />
+          <Route path="account/tokens" element={<AccountTokensContainer />} />
           <Route element={<RequireAdmin />}>
             <Route path="admin" element={<AdminLayout />}>
               <Route index element={<Navigate to={paths.adminMembers} replace />} />

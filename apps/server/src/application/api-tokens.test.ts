@@ -4,12 +4,15 @@ import { InMemoryApiTokenStore } from "../../test/fakes/in-memory-api-token-stor
 import {
   authenticateApiToken,
   createApiToken,
+  createPersonalApiToken,
   generateApiToken,
   hashApiToken,
   listApiTokens,
+  listPersonalApiTokens,
   resolveApiTokenActor,
   revokeApiToken,
-  type ApiTokenCaller,
+  revokePersonalApiToken,
+  type ProjectApiTokenCaller,
   type ApiTokensDeps,
 } from "./api-tokens.ts";
 import type { AuthenticatedUser } from "./sessions.ts";
@@ -17,6 +20,7 @@ import type { AuthenticatedUser } from "./sessions.ts";
 const sha256 = (value: string) => createHash("sha256").update(value).digest("hex");
 
 const admin: AuthenticatedUser = { id: 1, githubLogin: "OctoCat", name: null, avatarUrl: null, role: "admin" };
+const mona: AuthenticatedUser = { id: 7, githubLogin: "Mona", name: "Mona", avatarUrl: null, role: "member" };
 const shop = { id: 3, slug: "shop", name: "Shop", taskKeyPrefix: "RF", discordInviteUrl: null };
 const blog = { id: 4, slug: "blog", name: "Blog", taskKeyPrefix: "BL", discordInviteUrl: null };
 const NOW = new Date("2026-05-01T12:00:00Z");
@@ -27,14 +31,25 @@ describe("API tokens", () => {
   let store: InMemoryApiTokenStore;
   let clock: Date;
   let deps: ApiTokensDeps;
+  let members: Set<string>;
 
   beforeEach(() => {
     store = new InMemoryApiTokenStore();
     store.projects.push(shop, blog);
-    store.users.push({ id: admin.id, githubLogin: "octocat", name: "Octo", avatarUrl: null });
+    store.users.push(
+      { id: admin.id, githubLogin: "octocat", name: "Octo", avatarUrl: null },
+      { id: mona.id, githubLogin: "Mona", name: "Mona", avatarUrl: null },
+    );
     clock = NOW;
     store.now = () => clock;
-    deps = { store, now: () => clock, generateToken: () => TOKEN };
+    members = new Set(["mona"]);
+    deps = {
+      store,
+      now: () => clock,
+      generateToken: () => TOKEN,
+      adminLogins: ["octocat"],
+      isMember: async (login) => members.has(login),
+    };
   });
 
   describe("generateApiToken / hashApiToken", () => {
@@ -156,6 +171,108 @@ describe("API tokens", () => {
     });
   });
 
+  describe("personal tokens", () => {
+    it("creates a read token owned by the caller, with no project", async () => {
+      const result = await createPersonalApiToken(deps, { name: " Laptop ", expiresInDays: 30 }, mona);
+
+      expect(result).toEqual({
+        status: "created",
+        token: TOKEN,
+        apiToken: {
+          id: 1,
+          name: "Laptop",
+          prefix: "aaaaaaaa",
+          scope: "read",
+          createdAt: NOW,
+          createdBy: "Mona",
+          lastUsedAt: null,
+          expiresAt: new Date(NOW.getTime() + 30 * DAY_MS),
+          revokedAt: null,
+          status: "active",
+        },
+      });
+      expect(store.tokens[0]).toMatchObject({ projectId: null, ownerUserId: mona.id, createdByUserId: mona.id });
+    });
+
+    it("refuses a write token to a member", async () => {
+      expect(await createPersonalApiToken(deps, { name: "Agent", scope: "write" }, mona)).toEqual({
+        status: "scope_not_allowed",
+      });
+      expect(store.tokens).toEqual([]);
+    });
+
+    it("lets an admin create a write token", async () => {
+      const result = await createPersonalApiToken(deps, { name: "Agent", scope: "write" }, admin);
+      expect(result).toMatchObject({ status: "created", apiToken: { scope: "write" } });
+    });
+
+    it.each([
+      [null, "body"],
+      [{ name: "" }, "name"],
+      [{ name: "A", expiresInDays: 0 }, "expiresInDays"],
+      [{ name: "A", scope: "admin" }, "scope"],
+    ])("rejects %j as invalid %s", async (body, field) => {
+      expect(await createPersonalApiToken(deps, body, mona)).toEqual({ status: "invalid", field });
+    });
+
+    it("lists only the caller's own personal tokens, never project tokens", async () => {
+      await createPersonalApiToken(deps, { name: "Mine" }, mona);
+      deps.generateToken = () => `ttk_${"b".repeat(43)}`;
+      await createPersonalApiToken(deps, { name: "Admin's" }, admin);
+      deps.generateToken = () => `ttk_${"c".repeat(43)}`;
+      await createApiToken(deps, "shop", { name: "Project" }, mona);
+
+      expect((await listPersonalApiTokens(deps, mona)).map((t) => t.name)).toEqual(["Mine"]);
+      expect((await listPersonalApiTokens(deps, admin)).map((t) => t.name)).toEqual(["Admin's"]);
+      const project = await listApiTokens(deps, "shop");
+      expect(project.status === "ok" && project.tokens.map((t) => t.name)).toEqual(["Project"]);
+    });
+
+    it("revokes only the caller's own personal tokens", async () => {
+      await createPersonalApiToken(deps, { name: "Mine" }, mona);
+      deps.generateToken = () => `ttk_${"c".repeat(43)}`;
+      await createApiToken(deps, "shop", { name: "Project" }, mona);
+
+      expect(await revokePersonalApiToken(deps, admin, "1")).toEqual({ status: "token_not_found" });
+      expect(await revokePersonalApiToken(deps, mona, "2")).toEqual({ status: "token_not_found" });
+      expect(await revokePersonalApiToken(deps, mona, "abc")).toEqual({ status: "token_not_found" });
+      expect(store.tokens.map((t) => t.revokedAt)).toEqual([null, null]);
+
+      expect(await revokePersonalApiToken(deps, mona, "1")).toEqual({ status: "revoked" });
+      expect(store.tokens[0]?.revokedAt).toEqual(NOW);
+    });
+
+    it("does not let project token management touch personal tokens", async () => {
+      await createPersonalApiToken(deps, { name: "Mine" }, mona);
+      expect(await revokeApiToken(deps, "shop", "1")).toEqual({ status: "token_not_found" });
+      expect(store.tokens[0]?.revokedAt).toBeNull();
+    });
+
+    it("authenticates as the owner with their current role", async () => {
+      await createPersonalApiToken(deps, { name: "Mine" }, mona);
+      expect(await authenticateApiToken(deps, TOKEN)).toEqual({
+        kind: "api_token",
+        tokenId: 1,
+        projectId: null,
+        project: null,
+        scope: "read",
+        creator: { id: mona.id, githubLogin: "Mona", name: "Mona", avatarUrl: null },
+        owner: { id: mona.id, githubLogin: "Mona", name: "Mona", avatarUrl: null, role: "member" },
+      });
+    });
+
+    it("authenticates an admin's token as an admin", async () => {
+      await createPersonalApiToken(deps, { name: "Mine", scope: "write" }, admin);
+      expect(await authenticateApiToken(deps, TOKEN)).toMatchObject({ scope: "write", owner: { role: "admin" } });
+    });
+
+    it("rejects the token once its owner has no role any more", async () => {
+      await createPersonalApiToken(deps, { name: "Mine" }, mona);
+      members.clear();
+      expect(await authenticateApiToken(deps, TOKEN)).toBeUndefined();
+    });
+  });
+
   describe("authenticateApiToken", () => {
     beforeEach(async () => {
       await createApiToken(deps, "shop", { name: "A", expiresInDays: 30 }, admin);
@@ -221,7 +338,7 @@ describe("API tokens", () => {
 
   describe("resolveApiTokenActor", () => {
     const creator = { id: 7, githubLogin: "Mona", name: "Mona", avatarUrl: null };
-    const caller = (overrides: Partial<ApiTokenCaller> = {}): ApiTokenCaller => ({
+    const caller = (overrides: Partial<ProjectApiTokenCaller> = {}): ProjectApiTokenCaller => ({
       kind: "api_token",
       tokenId: 1,
       projectId: shop.id,
@@ -230,8 +347,7 @@ describe("API tokens", () => {
       creator,
       ...overrides,
     });
-    const members = new Set(["mona"]);
-    const actorDeps = { adminLogins: ["octocat"], isMember: async (login: string) => members.has(login) };
+    const actorDeps = { adminLogins: ["octocat"], isMember: async (login: string) => login === "mona" };
 
     it("acts as the creator with their current role", async () => {
       expect(await resolveApiTokenActor(actorDeps, caller())).toEqual({ ...creator, role: "member" });

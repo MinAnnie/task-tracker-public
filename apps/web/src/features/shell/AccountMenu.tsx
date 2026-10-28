@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router";
 import { CONNECT_DISCORD_URL } from "../../api/endpoints.ts";
 import type { CurrentUser } from "../../api/types.ts";
 import { initials } from "../../lib/initials.ts";
+import { paths } from "../../lib/paths.ts";
 import styles from "./AppShell.module.css";
 
 interface AccountMenuProps {
@@ -13,8 +15,8 @@ interface AccountMenuProps {
 }
 
 /**
- * Disclosure with the account name, the Discord connection (when the server
- * supports linking) and "Sign out"; closes on Escape or an outside click.
+ * Disclosure with the account name, the personal API tokens page, the Discord
+ * connection (when the server supports linking) and "Sign out"; closes on Escape or an outside click.
  */
 export function AccountMenu({ user, onLogout, loggingOut, onDisconnectDiscord, disconnectingDiscord }: AccountMenuProps) {
   const [open, setOpen] = useState(false);
@@ -59,6 +61,9 @@ export function AccountMenu({ user, onLogout, loggingOut, onDisconnectDiscord, d
             {user.name ?? user.githubLogin}
             <span className="mono">@{user.githubLogin}</span>
           </p>
+          <Link to={paths.accountTokens} className={styles.signOut} onClick={() => setOpen(false)}>
+            API tokens
+          </Link>
           {user.discordLinkingEnabled &&
             (user.discord ? (
               <>

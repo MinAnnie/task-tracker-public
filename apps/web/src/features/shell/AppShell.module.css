@@ -137,7 +137,7 @@
   background: var(--color-hover);
 }
 
-/* "Connect Discord" is a link styled like the menu's buttons. */
+/* "API tokens" and "Connect Discord" are links styled like the menu's buttons. */
 a.signOut {
   display: flex;
   align-items: center;

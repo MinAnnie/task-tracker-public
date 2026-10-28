@@ -1,8 +1,16 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { InMemoryApiTokenStore } from "../test/fakes/in-memory-api-token-store.ts";
 import { InMemoryTaskStore } from "../test/fakes/in-memory-task-store.ts";
 import { RecordingNotifications } from "../test/fakes/recording-notifications.ts";
 import { createApp, type AppDeps } from "./app.ts";
-import type { ApiTokenCaller } from "./application/api-tokens.ts";
+import {
+  createPersonalApiToken,
+  listPersonalApiTokens,
+  revokePersonalApiToken,
+  type ApiTokenCaller,
+  type ApiTokensDeps,
+} from "./application/api-tokens.ts";
+import type { AuthenticatedUser } from "./application/sessions.ts";
 import {
   addTaskDependency,
   createTask,
@@ -91,6 +99,8 @@ const responseSchema = (path: keyof typeof openApiDocument.paths, status: string
 
 const TOKEN = `ttk_${"d".repeat(43)}`;
 const WRITE_TOKEN = `ttk_${"w".repeat(43)}`;
+const PERSONAL_TOKEN = `ttk_${"p".repeat(43)}`;
+const ORIGIN = "https://tasks.example.com";
 const mona = { id: 2, githubLogin: "mona", name: "Mona", avatarUrl: null };
 const caller: ApiTokenCaller = {
   kind: "api_token",
@@ -99,6 +109,17 @@ const caller: ApiTokenCaller = {
   project: { id: 3, slug: "shop", name: "Shop", taskKeyPrefix: "RF", discordInviteUrl: "https://discord.gg/shop" },
   scope: "read",
   creator: { id: 2, githubLogin: "mona", name: "Mona", avatarUrl: null },
+};
+
+const monaMember: AuthenticatedUser = { ...mona, role: "member" };
+const personalCaller: ApiTokenCaller = {
+  kind: "api_token",
+  tokenId: 2,
+  projectId: null,
+  project: null,
+  scope: "read",
+  creator: mona,
+  owner: monaMember,
 };
 
 describe("OpenAPI document", () => {
@@ -149,6 +170,9 @@ describe("OpenAPI document", () => {
       authorGithubLogin: "mona",
     });
     const tasksDeps: TasksDeps = { store, adminLogins: [], notifications: new RecordingNotifications() };
+    const tokenStore = new InMemoryApiTokenStore();
+    tokenStore.users.push(mona);
+    const tokensDeps: ApiTokensDeps = { store: tokenStore, adminLogins: [], isMember: async () => true };
 
     const unused = async () => {
       throw new Error("not used");
@@ -160,13 +184,13 @@ describe("OpenAPI document", () => {
       githubClientId: "id",
       appBaseUrl: "https://tasks.example.com",
       completeGithubLogin: unused,
-      findSessionUser: async () => undefined,
+      findSessionUser: async (session) => (session === "session-token" ? monaMember : undefined),
       endSession: unused,
       listMembers: unused,
       addMember: unused,
       removeMember: unused,
       listProjects: unused,
-      listVisibleProjects: unused,
+      listVisibleProjects: async () => [caller.project],
       createProject: unused,
       getProject: unused,
       updateProject: unused,
@@ -194,6 +218,7 @@ describe("OpenAPI document", () => {
       handleDiscordInteraction: unused,
       authenticateApiToken: async (token) => {
         if (token === TOKEN) return caller;
+        if (token === PERSONAL_TOKEN) return personalCaller;
         return token === WRITE_TOKEN ? { ...caller, scope: "write" } : undefined;
       },
       resolveApiTokenActor: async () => ({ ...mona, role: "member" }),
@@ -201,6 +226,9 @@ describe("OpenAPI document", () => {
       listApiTokens: unused,
       createApiToken: unused,
       revokeApiToken: unused,
+      listPersonalApiTokens: (owner) => listPersonalApiTokens(tokensDeps, owner),
+      createPersonalApiToken: (body, owner) => createPersonalApiToken(tokensDeps, body, owner),
+      revokePersonalApiToken: (owner, tokenId) => revokePersonalApiToken(tokensDeps, owner, tokenId),
       listProjectStages: (viewer, slug) => listProjectStages(tasksDeps, viewer, slug),
       listStages: unused,
       createStage: unused,
@@ -304,6 +332,57 @@ describe("OpenAPI document", () => {
       expect(operation.security).toEqual([{ bearerAuth: ["write"] }]);
       expect(operation.description).toContain("write");
     }
+  });
+
+  it("describes the real reads of a personal token", async () => {
+    const projects = await get("/api/projects", PERSONAL_TOKEN);
+    expect(projects.status).toBe(200);
+    expect(validate(responseSchema("/api/projects", "200"), projects.body)).toEqual([]);
+
+    const tasks = await get("/api/projects/shop/tasks", PERSONAL_TOKEN);
+    expect(tasks.status).toBe(200);
+    expect(validate(responseSchema("/api/projects/{slug}/tasks", "200"), tasks.body)).toEqual([]);
+  });
+
+  /** A cookie-session request with the same-origin JSON headers the account endpoints need. */
+  const account = async (method: string, path: string, body?: unknown) => {
+    const headers: Record<string, string> = { cookie: "session=session-token", origin: ORIGIN };
+    if (body !== undefined) headers["content-type"] = "application/json";
+    const res = await app.request(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+    return { status: res.status, body: res.status === 204 ? undefined : ((await res.json()) as unknown) };
+  };
+
+  it("describes the real personal token management of the signed-in user", async () => {
+    const created = await account("POST", "/api/account/tokens", { name: "Laptop", expiresInDays: 30 });
+    expect(created.status).toBe(201);
+    expect(validate(responseSchema("/api/account/tokens", "201", "post"), created.body)).toEqual([]);
+
+    const listed = await account("GET", "/api/account/tokens");
+    expect(listed.status).toBe(200);
+    expect(listed.body).toHaveLength(1);
+    expect(validate(responseSchema("/api/account/tokens", "200"), listed.body)).toEqual([]);
+
+    const refused = await account("POST", "/api/account/tokens", { name: "Agent", scope: "write" });
+    expect(refused.status).toBe(403);
+    expect(validate(responseSchema("/api/account/tokens", "403", "post"), refused.body)).toEqual([]);
+
+    const revoked = await account("DELETE", "/api/account/tokens/1");
+    expect(revoked.status).toBe(204);
+    expect(operationOf("/api/account/tokens/{id}", "delete").responses["204"]).toBeDefined();
+    const missing = await account("DELETE", "/api/account/tokens/99");
+    expect(missing.status).toBe(404);
+    expect(validate(responseSchema("/api/account/tokens/{id}", "404", "delete"), missing.body)).toEqual([]);
+  });
+
+  it("documents the account endpoints as cookie-session only", () => {
+    for (const [path, method] of [
+      ["/api/account/tokens", "get"],
+      ["/api/account/tokens", "post"],
+      ["/api/account/tokens/{id}", "delete"],
+    ] as const) {
+      expect(operationOf(path, method).security).toEqual([{ cookieAuth: [] }]);
+    }
+    expect(openApiDocument.info.description).toContain("personal");
   });
 
   it("would catch an undocumented or mistyped field", () => {

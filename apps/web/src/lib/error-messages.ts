@@ -50,6 +50,7 @@ const MESSAGES: Record<string, string> = {
   invalid_token_name: "Give the token a name of up to 60 characters.",
   invalid_token_expiry: "Pick one of the listed expiry options.",
   token_not_found: "That token was already removed.",
+  token_scope_not_allowed: "Personal tokens of members are read only.",
   invalid_token_scope: RELOAD,
   token_not_allowed: RELOAD,
   invalid_origin: RELOAD,

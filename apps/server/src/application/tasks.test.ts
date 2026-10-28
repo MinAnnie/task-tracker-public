@@ -975,5 +975,37 @@ describe("tasks", () => {
     ] as const)("%s hides other projects as project_not_found", async (_, call) => {
       expect(await call()).toEqual({ status: "project_not_found" });
     });
+
+    describe("personal tokens", () => {
+      const personal = (owner: AuthenticatedUser): ApiTokenViewer => ({ kind: "api_token", projectId: null, owner });
+      const reads = [
+        ["listTasks", (v: ApiTokenViewer, slug: string) => listTasks(deps, v, slug)],
+        ["getTask", (v: ApiTokenViewer, slug: string) => getTask(deps, v, slug, "RF-1")],
+        ["listParticipants", (v: ApiTokenViewer, slug: string) => listParticipants(deps, v, slug)],
+        ["listProjectStages", (v: ApiTokenViewer, slug: string) => listProjectStages(deps, v, slug)],
+      ] as const;
+
+      it.each(reads)("%s lets an admin's token into every project", async (_, call) => {
+        expect(await call(personal(admin), "shop")).toMatchObject({ status: "ok" });
+        expect(await call(personal(admin), "blog")).not.toMatchObject({ status: expect.stringMatching(/forbidden|project_not_found/) });
+      });
+
+      it.each(reads)("%s lets a member's token into their projects only, like their session", async (_, call) => {
+        expect(await call(personal(mona), "shop")).toMatchObject({ status: "ok" });
+        expect(await call(personal(mona), "blog")).toEqual({ status: "forbidden" });
+        expect(await call(personal(mona), "ghost")).toEqual({ status: "project_not_found" });
+      });
+
+      it("follows the owner's current project membership", async () => {
+        store.projectMembers = store.projectMembers.filter((m) => m.githubLogin !== "mona");
+        expect(await listTasks(deps, personal(mona), "shop")).toEqual({ status: "forbidden" });
+      });
+
+      it("never offers to take a task", async () => {
+        const result = await listTasks(deps, personal(admin), "shop");
+        expect(result.status === "ok" && result.tasks.map((t) => t.canTake)).toEqual([false]);
+        expect(await getTask(deps, personal(mona), "shop", "RF-1")).toMatchObject({ task: { canTake: false } });
+      });
+    });
   });
 });

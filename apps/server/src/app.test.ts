@@ -71,6 +71,9 @@ const makeApp = (overrides: Partial<AppDeps> = {}) =>
     updateStage: async () => ({ status: "project_not_found" }),
     deleteStage: async () => ({ status: "project_not_found" }),
     resolveApiTokenActor: async () => undefined,
+    listPersonalApiTokens: async () => [],
+    createPersonalApiToken: async () => ({ status: "invalid", field: "body" }),
+    revokePersonalApiToken: async () => ({ status: "token_not_found" }),
     ...overrides,
   });
 
@@ -2407,5 +2410,215 @@ describe("API token (bearer) writes", () => {
     });
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({ error: "dependencies_pending", pendingDependencies: ["RF-2"] });
+  });
+});
+
+/** A personal token of `owner`: no project, acting as its owner with their current role. */
+const personalCaller = (owner: AuthenticatedUser, scope: "read" | "write" = "read"): ApiTokenCaller => ({
+  kind: "api_token",
+  tokenId: 9,
+  projectId: null,
+  project: null,
+  scope,
+  creator: { id: owner.id, githubLogin: owner.githubLogin, name: owner.name, avatarUrl: owner.avatarUrl },
+  owner,
+});
+
+describe("personal API tokens (bearer)", () => {
+  it("lists the projects the owner can see on GET /api/projects", async () => {
+    const projects = [{ id: 3, slug: "shop", name: "Shop", taskKeyPrefix: "RF", discordInviteUrl: null }];
+    const list = vi.fn(async () => projects);
+    const app = makeApp({ ...withToken(personalCaller(member)), listVisibleProjects: list });
+
+    const res = await bearerRequest(app, "/api/projects");
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual(projects);
+    expect(list).toHaveBeenCalledWith(member);
+  });
+
+  it("reads through the task use cases as a token viewer", async () => {
+    const caller = personalCaller(member);
+    const listTasks = vi.fn(async () => ({ status: "ok" as const, tasks: [] }));
+    const res = await bearerRequest(makeApp({ ...withToken(caller), listTasks }), "/api/projects/blog/tasks");
+    expect(res.status).toBe(200);
+    expect(listTasks).toHaveBeenCalledWith(caller, "blog");
+  });
+
+  it("maps a project outside the owner's reach like their session would (403 forbidden)", async () => {
+    const app = makeApp({ ...withToken(personalCaller(member)), listTasks: async () => ({ status: "forbidden" }) });
+    const res = await bearerRequest(app, "/api/projects/blog/tasks");
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "forbidden" });
+  });
+
+  it.each(tokenWriteRoutes)("%s %s with an admin's write token runs as the admin, in any project", async (method, path, body, useCase, status) => {
+    const spies = succeedingTaskWrites();
+    const resolveApiTokenActor = vi.fn();
+    const app = makeApp({ ...withToken(personalCaller(admin, "write")), ...spies, resolveApiTokenActor });
+
+    const res = await bearerRequest(app, path.replace("/shop/", "/blog/"), { method, body, origin: false });
+
+    expect(res.status).toBe(status);
+    expect((spies[useCase].mock.calls[0] as unknown[])[0]).toEqual(admin);
+    expect((spies[useCase].mock.calls[0] as unknown[])[1]).toBe("blog");
+    expect(resolveApiTokenActor).not.toHaveBeenCalled();
+  });
+
+  it.each(tokenWriteRoutes)("%s %s refuses a write token whose owner is now only a member", async (method, path, body) => {
+    const spies = succeedingTaskWrites();
+    const app = makeApp({ ...withToken(personalCaller(member, "write")), ...spies });
+    const res = await bearerRequest(app, path, { method, body });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "token_not_allowed" });
+    for (const spy of Object.values(spies)) expect(spy).not.toHaveBeenCalled();
+  });
+
+  it.each(tokenWriteRoutes)("%s %s refuses a read token", async (method, path, body) => {
+    const spies = succeedingTaskWrites();
+    const app = makeApp({ ...withToken(personalCaller(admin)), ...spies });
+    const res = await bearerRequest(app, path, { method, body });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "token_not_allowed" });
+  });
+
+  it("still refuses to assign with a write token", async () => {
+    const spies = succeedingTaskWrites();
+    const app = makeApp({ ...withToken(personalCaller(admin, "write")), ...spies });
+    const res = await bearerRequest(app, "/api/projects/shop/tasks", {
+      method: "POST",
+      body: JSON.stringify({ title: "X", assigneeLogin: "mona" }),
+    });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "token_not_allowed" });
+    expect(spies.createTask).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["GET", "/api/admin/projects", undefined],
+    ["GET", "/api/admin/projects/shop/tokens", undefined],
+    ["GET", "/api/account/tokens", undefined],
+    ["POST", "/api/account/tokens", JSON.stringify({ name: "x" })],
+    ["DELETE", "/api/account/tokens/1", undefined],
+    ["POST", "/api/projects/shop/tasks/RF-1/take", "{}"],
+    ["DELETE", "/api/projects/shop/tasks/RF-1", undefined],
+    ["POST", "/auth/logout", undefined],
+  ] as const)("%s %s stays refused for an admin's write token", async (method, path, body) => {
+    const auth = withToken(personalCaller(admin, "write"));
+    const spies = {
+      ...succeedingTaskWrites(),
+      ...adminSpies(),
+      endSession: vi.fn(),
+      listPersonalApiTokens: vi.fn(),
+      createPersonalApiToken: vi.fn(),
+      revokePersonalApiToken: vi.fn(),
+    };
+    const app = makeApp({ ...auth, ...spies, ...asUser(admin) });
+
+    const res = await bearerRequest(app, path, { method, body, cookie: true });
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "token_not_allowed" });
+    for (const spy of Object.values(spies)) expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("answers 401 when the owner lost every role (the use case finds no caller)", async () => {
+    const res = await bearerRequest(makeApp({ authenticateApiToken: async () => undefined }), "/api/projects");
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: "invalid_token" });
+  });
+});
+
+describe("/api/account/tokens", () => {
+  const personalView: ApiTokenView = { ...tokenView, name: "Laptop", createdBy: "mona" };
+  const personalViewJson = { ...tokenViewJson, name: "Laptop", createdBy: "mona" };
+
+  it("lists the signed-in user's own personal tokens, for members too", async () => {
+    const list = vi.fn(async () => [personalView]);
+    const res = await adminRequest(makeApp({ ...asUser(member), listPersonalApiTokens: list }), "/api/account/tokens");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual([personalViewJson]);
+    expect(list).toHaveBeenCalledWith(member);
+  });
+
+  it("creates a personal token and returns its secret once, uncached", async () => {
+    const create = vi.fn(async () => ({ status: "created" as const, token: API_TOKEN, apiToken: personalView }));
+    const app = makeApp({ ...asUser(member), createPersonalApiToken: create });
+
+    const res = await adminRequest(app, "/api/account/tokens", { method: "POST", body: JSON.stringify({ name: "Laptop" }) });
+
+    expect(res.status).toBe(201);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(await res.json()).toEqual({ token: API_TOKEN, ...personalViewJson });
+    expect(create).toHaveBeenCalledWith({ name: "Laptop" }, member);
+  });
+
+  it.each([
+    [{ status: "scope_not_allowed" }, 403, { error: "token_scope_not_allowed" }],
+    [{ status: "invalid", field: "name" }, 400, { error: "invalid_token_name" }],
+    [{ status: "invalid", field: "scope" }, 400, { error: "invalid_token_scope" }],
+    [{ status: "invalid", field: "expiresInDays" }, 400, { error: "invalid_token_expiry" }],
+  ] as const)("maps %j to %i", async (result, status, body) => {
+    const app = makeApp({ ...asUser(member), createPersonalApiToken: async () => result });
+    const res = await adminRequest(app, "/api/account/tokens", { method: "POST", body: "{}" });
+    expect(res.status).toBe(status);
+    expect(await res.json()).toEqual(body);
+  });
+
+  it("returns 400 for malformed JSON", async () => {
+    const create = vi.fn();
+    const res = await adminRequest(makeApp({ ...asUser(member), createPersonalApiToken: create }), "/api/account/tokens", {
+      method: "POST",
+      body: "{nope",
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "malformed_json" });
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("revokes one of the user's tokens", async () => {
+    const revoke = vi.fn(async () => ({ status: "revoked" as const }));
+    const res = await adminRequest(makeApp({ ...asUser(member), revokePersonalApiToken: revoke }), "/api/account/tokens/7", {
+      method: "DELETE",
+    });
+    expect(res.status).toBe(204);
+    expect(revoke).toHaveBeenCalledWith(member, "7");
+  });
+
+  it("answers 404 for a token that is not the user's", async () => {
+    const res = await adminRequest(makeApp(asUser(member)), "/api/account/tokens/7", { method: "DELETE" });
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "token_not_found" });
+  });
+
+  it("requires a session", async () => {
+    const list = vi.fn();
+    const res = await adminRequest(makeApp({ listPersonalApiTokens: list }), "/api/account/tokens");
+    expect(res.status).toBe(401);
+    expect(list).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["a foreign Origin", { origin: "https://evil.example.com" }, 403, "invalid_origin"],
+    ["no JSON content type", { contentType: null }, 415, "unsupported_media_type"],
+  ] as const)("refuses a POST with %s", async (_, options, status, error) => {
+    const create = vi.fn();
+    const res = await adminRequest(makeApp({ ...asUser(member), createPersonalApiToken: create }), "/api/account/tokens", {
+      method: "POST",
+      body: JSON.stringify({ name: "x" }),
+      ...options,
+    });
+    expect(res.status).toBe(status);
+    expect(await res.json()).toEqual({ error });
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("refuses a project token too", async () => {
+    const list = vi.fn();
+    const app = makeApp({ ...withToken(), ...asUser(member), listPersonalApiTokens: list });
+    const res = await bearerRequest(app, "/api/account/tokens", { cookie: true });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "token_not_allowed" });
+    expect(list).not.toHaveBeenCalled();
   });
 });

@@ -216,14 +216,18 @@ export const taskPullRequests = pgTable(
   ],
 );
 
-/** Project-scoped tokens for scripts and agents; only the hash of the secret is stored. */
+/**
+ * Tokens for scripts and agents, scoped to one project or personal to a user (see
+ * `api_tokens_project_xor_owner`); only the hash of the secret is stored.
+ */
 export const apiTokens = pgTable(
   "api_tokens",
   {
     id: serial("id").primaryKey(),
-    projectId: integer("project_id")
-      .notNull()
-      .references(() => projects.id, { onDelete: "cascade" }),
+    /** The project of a project token; `null` for a personal token. */
+    projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }),
+    /** The owner of a personal token; `null` for a project token. */
+    ownerUserId: integer("owner_user_id").references(() => users.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     /** Hex SHA-256 of the full `ttk_...` token. */
     tokenHash: text("token_hash").notNull().unique(),
@@ -239,6 +243,9 @@ export const apiTokens = pgTable(
   },
   (t) => [
     index("api_tokens_project_id_idx").on(t.projectId),
+    index("api_tokens_owner_user_id_idx").on(t.ownerUserId),
     check("api_tokens_scope_valid", sql`${t.scope} in ('read', 'write')`),
+    // Exactly one of the two: a project token or a personal token.
+    check("api_tokens_project_xor_owner", sql`(${t.projectId} is null) <> (${t.ownerUserId} is null)`),
   ],
 );

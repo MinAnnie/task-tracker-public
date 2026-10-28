@@ -1,10 +1,27 @@
 # Task Tracker MCP server
 
-A [Model Context Protocol](https://modelcontextprotocol.io) server over stdio. It lets AI agents read one Task Tracker project through a project-scoped API token and, with a **Read & write** token, create and edit its tasks and dependencies.
+A [Model Context Protocol](https://modelcontextprotocol.io) server over stdio. It lets AI agents read Task Tracker projects through an API token and, with a **Read & write** token, create and edit their tasks and dependencies.
+
+## Personal or project token?
+
+The server works with both kinds of token:
+
+| | Personal token | Project token |
+| --- | --- | --- |
+| Created by | Any signed-in user, for themselves (account menu → **API tokens**) | An admin (Admin → project → **API tokens**) |
+| Reaches | Every project its owner can access right now: all of them for an admin, the projects a member belongs to | That one project |
+| Access | Members: read only. Admins: read only or read & write | Read only or read & write |
+| Acts as | Its owner, with their current role | The admin who created it, with their current access |
+
+**Admins working across projects: use a personal token.** One token covers every project, so you don't need one per project. A project token fits a bot or script that should only ever touch one project.
+
+With a personal token, `list_projects` returns every project you can access. The other tools need to know the project: pass `project` (a slug from `list_projects`), or set `TRACKER_PROJECT` as the default. Without either, a tool answers with the visible slugs and asks for `project`. If the token sees exactly one project, that one is used.
+
+A personal token stops working as soon as its owner loses their role, and it is revoked when the member is removed.
 
 | Tool | What it returns |
 | --- | --- |
-| `list_projects` | The projects the token can see (slug, name, key prefix). |
+| `list_projects` | The projects the token can see (slug, name, key prefix): one for a project token, every accessible project for a personal token. |
 | `list_tasks` | The board as compact lines (`KEY · status · priority · stage · assignee · title`, plus "waiting on …"), sorted by priority and then key. It shows total vs shown counts. Filters: `availability` (`any`/`ready`/`blocked`), `status[]`, `priority[]`, `stage[]` (`""` = no stage), `assignee` (`any`/`unassigned`/login), `search`, `limit` (default 50, max 200). |
 | `get_task` | One task as the web's "Copy for AI" markdown brief: status, dependencies, what it blocks, PRs, the suggested branch `feat/<KEY>-<slug>`, a link, and the description. |
 | `next_tasks` | Ready tasks, most urgent first, each with why it is ready and what it unblocks (`limit`, default 10). |
@@ -13,7 +30,9 @@ A [Model Context Protocol](https://modelcontextprotocol.io) server over stdio. I
 | `add_dependency` | **Modifies data.** Makes `key` depend on `dependsOn` (same project; cycles are refused). |
 | `remove_dependency` | **Modifies data.** Removes that dependency. |
 
-The four write tools need a token created with **Read & write** access. They act as the admin who created the token, with that admin's current access, and Discord notifications name that admin. With a read-only token they fail with: "This token is read-only. Create a Read & write token in Admin → the project → API tokens."
+Every tool except `list_projects` takes an optional `project` slug (see above).
+
+The four write tools need a token created with **Read & write** access. They act as the user who created the token (project token) or owns it (personal token), with that user's current access, and Discord notifications name that user. Only admins can hold a read & write personal token. With a read-only token they fail with: "This token is read-only. Create a Read & write token in Admin → the project → API tokens."
 
 A task is **ready** when it is unassigned, not done, and has no pending dependency. The server computes this itself because the API always answers `canTake: false` to tokens.
 
@@ -28,9 +47,9 @@ pnpm --filter @task-tracker/mcp build    # → apps/mcp/dist/index.js
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `TRACKER_API_TOKEN` | — (required) | An API token (`ttk_…`): **Read only** for the read tools, **Read & write** to also use the write tools. Create it in Admin → project → **API tokens**. If it is missing, the server still starts, but every tool answers `TRACKER_API_TOKEN is not set`. |
+| `TRACKER_API_TOKEN` | — (required) | An API token (`ttk_…`): **Read only** for the read tools, **Read & write** to also use the write tools. Create a personal one in the account menu → **API tokens**, or a project one in Admin → project → **API tokens**. If it is missing, the server still starts, but every tool answers `TRACKER_API_TOKEN is not set`. |
 | `TRACKER_API_URL` | — (required) | The Task Tracker base URL, e.g. `https://your-tracker.example.com`. Task links use it too. If it is missing, the server still starts, but every tool answers `TRACKER_API_URL is not set`. |
-| `TRACKER_PROJECT` | — | The default project slug. Without it, the server uses the token's only project. |
+| `TRACKER_PROJECT` | — | The default project slug; a `project` argument still wins. Without it, the server uses the token's only project, or asks for `project` when a personal token sees several. |
 
 The token goes only into the `Authorization` header. It is never logged. stdout is the MCP channel, and the one startup line on stderr does not include the token. Error messages redact it.
 

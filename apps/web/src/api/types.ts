@@ -195,7 +195,7 @@ export type ApiTokenStatus = "active" | "expired" | "revoked";
 /** `write` tokens may also create and edit tasks and their dependencies. */
 export type ApiTokenScope = "read" | "write";
 
-/** A project-scoped API token as listed to admins: metadata only, never the secret. */
+/** A project or personal API token as listed to its managers: metadata only, never the secret. */
 export interface ApiToken {
   id: number;
   name: string;
@@ -204,7 +204,7 @@ export interface ApiToken {
   scope: ApiTokenScope;
   /** ISO timestamps. */
   createdAt: string;
-  /** Login of the admin who created it, when that user still exists. */
+  /** Login of the user who created it, when that user still exists. */
   createdBy: string | null;
   lastUsedAt: string | null;
   /** `null` when it never expires. */

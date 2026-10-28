@@ -8,9 +8,12 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { createMiddleware } from "hono/factory";
 import type {
   ApiTokenCaller,
+  ApiTokenView,
   CreateApiTokenResult,
+  CreatePersonalApiTokenResult,
   ListApiTokensResult,
   RevokeApiTokenResult,
+  RevokePersonalApiTokenResult,
   ApiTokenField,
 } from "./application/api-tokens.ts";
 import type { DiscordAccount, SessionUser } from "./application/auth-store.ts";
@@ -147,8 +150,9 @@ export interface AppDeps {
   /** Answers a verified, parsed Discord interaction (PING, slash command or autocomplete). */
   handleDiscordInteraction: (interaction: unknown) => Promise<DiscordInteractionResponse>;
   /**
-   * Resolves a bearer token to its read-only, project-scoped caller; `undefined` when it is
-   * malformed, unknown, revoked or expired. Implementations must never log the token.
+   * Resolves a bearer token to its caller (a project token, or a personal token with its
+   * owner's current role); `undefined` when it is malformed, unknown, revoked or expired,
+   * or its owner has no role any more. Implementations must never log the token.
    */
   authenticateApiToken: (token: string) => Promise<ApiTokenCaller | undefined>;
   /** Counts one request of an authenticated API token against its rate limit. */
@@ -163,6 +167,12 @@ export interface AppDeps {
    * `undefined` when the creator is gone or no longer an admin or member.
    */
   resolveApiTokenActor: (caller: ApiTokenCaller) => Promise<AuthenticatedUser | undefined>;
+  /** The signed-in user's own personal tokens. */
+  listPersonalApiTokens: (owner: AuthenticatedUser) => Promise<ApiTokenView[]>;
+  /** Creates a personal token for the signed-in user; `body` is untrusted. The secret is returned once. */
+  createPersonalApiToken: (body: unknown, owner: AuthenticatedUser) => Promise<CreatePersonalApiTokenResult>;
+  /** Revokes one of the signed-in user's personal tokens; `tokenId` is the untrusted path segment. */
+  revokePersonalApiToken: (owner: AuthenticatedUser, tokenId: string) => Promise<RevokePersonalApiTokenResult>;
   /** The stages of a project the user (or API token) participates in. */
   listProjectStages: (viewer: TaskViewer, slug: string) => Promise<ListProjectStagesResult>;
   /** The stages of a project (admin view). */
@@ -375,6 +385,9 @@ export function createApp({
   createApiToken,
   revokeApiToken,
   resolveApiTokenActor,
+  listPersonalApiTokens,
+  createPersonalApiToken,
+  revokePersonalApiToken,
   listProjectStages,
   listStages,
   createStage,
@@ -504,9 +517,10 @@ export function createApp({
    * For the task writes. Without an `Authorization` header: the session cookie, with
    * the same-origin JSON checks ({@link requireUser}, {@link requireSameOriginJson}).
    * With one (only {@link TOKEN_WRITE_ROUTES} get here, and the bearer token wins over
-   * any cookie): a `write` token of this very project, acting as its creator with
-   * their current role. Bearer requests carry no cookies, so they skip the Origin check,
-   * but bodies must still be declared as JSON.
+   * any cookie): a `write` project token of this very project, acting as its creator
+   * with their current role, or a `write` personal token whose owner is an admin right
+   * now, acting as that admin (the use cases then check project access). Bearer requests
+   * carry no cookies, so they skip the Origin check, but bodies must still be declared as JSON.
    */
   const requireTaskWriter = createMiddleware<AdminEnv>(async (c, next) => {
     const authorization = c.req.header("authorization");
@@ -524,12 +538,16 @@ export function createApp({
     if (!authenticated.ok) return authenticated.response;
     const { caller } = authenticated;
     if (caller.scope !== "write") return c.json({ error: "token_not_allowed" }, 403);
-    if (normalizeProjectSlug(c.req.param("slug")) !== caller.project.slug) {
+    // Personal write tokens are for admins: one whose owner is now a member only reads.
+    if (caller.projectId === null && caller.owner.role !== "admin") {
+      return c.json({ error: "token_not_allowed" }, 403);
+    }
+    if (caller.projectId !== null && normalizeProjectSlug(c.req.param("slug")) !== caller.project.slug) {
       return c.json({ error: "project_not_found" }, 404);
     }
     const refusal = jsonBodyRefusal(c);
     if (refusal) return refusal;
-    const actor = await resolveApiTokenActor(caller);
+    const actor = caller.projectId === null ? caller.owner : await resolveApiTokenActor(caller);
     if (actor === undefined) return c.json({ error: "forbidden" }, 403);
     c.set("user", actor);
     c.set("viewer", caller);
@@ -959,18 +977,53 @@ export function createApp({
 
   app.route("/api/admin", admin);
 
+  // The signed-in user's personal API tokens: cookie session only (requireUser refuses any
+  // bearer token), for every role. Nobody ever sees or revokes another user's tokens.
+  const account = new Hono<AdminEnv>();
+  account.use("*", requireUser, requireSameOriginJson);
+
+  account.get("/tokens", async (c) => c.json(await listPersonalApiTokens(c.get("user"))));
+
+  account.post("/tokens", async (c) => {
+    const parsed = await readJsonBody(c);
+    if (!parsed.ok) return c.json({ error: "malformed_json" }, 400);
+
+    const result = await createPersonalApiToken(parsed.body, c.get("user"));
+    switch (result.status) {
+      case "created":
+        // The only response that ever carries the secret: keep it out of every cache.
+        c.header("Cache-Control", "no-store");
+        return c.json({ token: result.token, ...result.apiToken }, 201);
+      case "invalid":
+        return c.json({ error: INVALID_API_TOKEN_FIELD_ERRORS[result.field] }, 400);
+      case "scope_not_allowed":
+        // A well-formed request the caller's role does not allow: members only get read tokens.
+        return c.json({ error: "token_scope_not_allowed" }, 403);
+    }
+  });
+
+  account.delete("/tokens/:id", async (c) => {
+    const result = await revokePersonalApiToken(c.get("user"), c.req.param("id"));
+    if (result.status !== "revoked") return c.json({ error: result.status }, 404);
+    return c.body(null, 204);
+  });
+
+  app.route("/api/account", account);
+
   // Public, so agents can discover the token-readable endpoints.
   app.get("/api/openapi.json", (c) => c.json(openApiDocument));
 
-  // Any signed-in user: admins see every project, members only their own; a token only its project.
+  // Any signed-in user: admins see every project, members only their own; a project token
+  // only its project; a personal token what its owner sees.
   app.get("/api/projects", requireViewer, async (c) => {
     const viewer = c.get("viewer");
-    return "kind" in viewer ? c.json([viewer.project]) : c.json(await listVisibleProjects(viewer));
+    if (!("kind" in viewer)) return c.json(await listVisibleProjects(viewer));
+    return viewer.projectId === null ? c.json(await listVisibleProjects(viewer.owner)) : c.json([viewer.project]);
   });
 
   // Project participants (admins, or members of the project); the use cases check access.
-  // Reads also accept a project-scoped API token; writes need the cookie session or, for
-  // the few TOKEN_WRITE_ROUTES, a write token of the project.
+  // Reads also accept an API token; writes need the cookie session or, for the few
+  // TOKEN_WRITE_ROUTES, a write token (see requireTaskWriter).
   const tasksApi = new Hono<AdminEnv>();
   tasksApi.on(["POST", "PATCH", "DELETE"], ["/", "/*"], requireTaskWriter);
 

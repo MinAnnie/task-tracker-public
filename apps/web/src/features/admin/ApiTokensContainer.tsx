@@ -1,17 +1,24 @@
+import type { UseMutationResult, UseQueryResult } from "@tanstack/react-query";
 import { useState } from "react";
 import { useApiTokens, useCreateApiToken, useRevokeApiToken } from "../../api/queries.ts";
-import type { ApiToken, NewApiTokenInput } from "../../api/types.ts";
+import type { ApiToken, CreatedApiToken, NewApiTokenInput } from "../../api/types.ts";
 import { errorMessage } from "../../lib/error-messages.ts";
 import { ConfirmDialog } from "../../ui/ConfirmDialog.tsx";
 import { apiTokenUsageHint } from "./admin-model.ts";
-import { ApiTokensSection } from "./ApiTokensSection.tsx";
+import { ApiTokensSection, type ApiTokensSectionProps } from "./ApiTokensSection.tsx";
 import { NewTokenDialog } from "./NewTokenDialog.tsx";
 
-/** The project's API tokens: list, create (showing the secret once) and revoke. */
-export function ApiTokensContainer({ slug }: { slug: string }) {
-  const tokens = useApiTokens(slug);
-  const create = useCreateApiToken(slug);
-  const revoke = useRevokeApiToken(slug);
+export interface ApiTokensManagerProps
+  extends Pick<ApiTokensSectionProps, "hint" | "allowWrite" | "readOnlyNote"> {
+  tokens: UseQueryResult<ApiToken[]>;
+  create: UseMutationResult<CreatedApiToken, unknown, NewApiTokenInput>;
+  revoke: UseMutationResult<void, unknown, number>;
+  /** Example command shown with a new token; it must reference `$TRACKER_API_TOKEN`, never the secret. */
+  usageHint: string;
+}
+
+/** A list of API tokens with create (showing the secret once) and revoke, over the given queries. */
+export function ApiTokensManager({ tokens, create, revoke, usageHint, ...sectionProps }: ApiTokensManagerProps) {
   // The secret lives only here, and only until the dialog closes.
   const [created, setCreated] = useState<{ name: string; token: string }>();
   const [tokenToRevoke, setTokenToRevoke] = useState<ApiToken>();
@@ -31,6 +38,7 @@ export function ApiTokensContainer({ slug }: { slug: string }) {
   return (
     <>
       <ApiTokensSection
+        {...sectionProps}
         tokens={tokens.data}
         loadError={tokens.isError ? errorMessage(tokens.error) : undefined}
         onCreate={createToken}
@@ -43,7 +51,7 @@ export function ApiTokensContainer({ slug }: { slug: string }) {
         <NewTokenDialog
           name={created.name}
           token={created.token}
-          usageHint={apiTokenUsageHint(window.location.origin, slug)}
+          usageHint={usageHint}
           onClose={() => setCreated(undefined)}
         />
       )}
@@ -62,5 +70,17 @@ export function ApiTokensContainer({ slug }: { slug: string }) {
         </ConfirmDialog>
       )}
     </>
+  );
+}
+
+/** The project's API tokens: list, create (showing the secret once) and revoke. */
+export function ApiTokensContainer({ slug }: { slug: string }) {
+  return (
+    <ApiTokensManager
+      tokens={useApiTokens(slug)}
+      create={useCreateApiToken(slug)}
+      revoke={useRevokeApiToken(slug)}
+      usageHint={apiTokenUsageHint(window.location.origin, slug)}
+    />
   );
 }

@@ -24,6 +24,7 @@ export const queryKeys = {
   adminProject: (slug: string) => ["admin", "projects", slug] as const,
   adminProjectTokens: (slug: string) => ["admin", "projects", slug, "tokens"] as const,
   adminProjectStages: (slug: string) => ["admin", "projects", slug, "stages"] as const,
+  personalTokens: ["account", "tokens"] as const,
 };
 
 export const useCurrentUser = () => useQuery({ queryKey: queryKeys.me, queryFn: api.fetchCurrentUser });
@@ -242,6 +243,20 @@ export function useCreateApiToken(slug: string) {
 export function useRevokeApiToken(slug: string) {
   const invalidate = useInvalidate(queryKeys.adminProjectTokens(slug));
   return useMutation({ mutationFn: (id: number) => api.revokeApiToken(slug, id), onSettled: invalidate });
+}
+
+export const usePersonalApiTokens = () =>
+  useQuery({ queryKey: queryKeys.personalTokens, queryFn: api.fetchPersonalApiTokens });
+
+/** Like {@link useCreateApiToken}: the secret must not linger in the mutation cache. */
+export function useCreatePersonalApiToken() {
+  const invalidate = useInvalidate(queryKeys.personalTokens);
+  return useMutation({ mutationFn: api.createPersonalApiToken, onSettled: invalidate, gcTime: 0 });
+}
+
+export function useRevokePersonalApiToken() {
+  const invalidate = useInvalidate(queryKeys.personalTokens);
+  return useMutation({ mutationFn: api.revokePersonalApiToken, onSettled: invalidate });
 }
 
 export const useAdminStages = (slug: string) =>

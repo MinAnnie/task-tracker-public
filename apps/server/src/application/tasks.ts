@@ -115,15 +115,15 @@ export interface TaskDetail {
 }
 
 /**
- * A read-only caller holding a project-scoped API token. It is not a user: it never
- * takes tasks and only sees its own project.
+ * A reader holding an API token. It is not a user: it never takes tasks. A project
+ * token only sees its own project; a personal token (`projectId: null`) sees what its
+ * owner, with their current role, can see.
  */
-export interface ApiTokenViewer {
-  kind: "api_token";
-  projectId: number;
-}
+export type ApiTokenViewer =
+  | { kind: "api_token"; projectId: number }
+  | { kind: "api_token"; projectId: null; owner: AuthenticatedUser };
 
-/** Who reads a project: a signed-in user or an API token scoped to one project. */
+/** Who reads a project: a signed-in user or an API token. */
 export type TaskViewer = AuthenticatedUser | ApiTokenViewer;
 
 const isApiTokenViewer = (viewer: TaskViewer): viewer is ApiTokenViewer =>
@@ -219,8 +219,9 @@ const isAdmin = (user: AuthenticatedUser) => user.role === "admin";
 
 /**
  * Resolves a project the viewer participates in: configured admins see every project,
- * members only those they belong to, and API tokens only their own project (any
- * other is reported as not found, so tokens never learn which projects exist).
+ * members only those they belong to, project tokens only their own project (any
+ * other is reported as not found, so they never learn which projects exist), and
+ * personal tokens exactly what their owner sees.
  * With `lock`, the project row stays locked for the rest of the transaction.
  */
 async function openProject(
@@ -232,12 +233,13 @@ async function openProject(
   const normalized = normalizeProjectSlug(slug);
   const project = normalized === undefined ? undefined : await store.findProjectBySlug(normalized, { lock });
   if (project === undefined) return { ok: false, failure: { status: "project_not_found" } };
-  if (isApiTokenViewer(user)) {
+  if (isApiTokenViewer(user) && user.projectId !== null) {
     return project.id === user.projectId
       ? { ok: true, project }
       : { ok: false, failure: { status: "project_not_found" } };
   }
-  if (!isAdmin(user) && !(await store.isProjectMember(project.id, user.githubLogin.toLowerCase()))) {
+  const person = isApiTokenViewer(user) ? user.owner : user;
+  if (!isAdmin(person) && !(await store.isProjectMember(project.id, person.githubLogin.toLowerCase()))) {
     return { ok: false, failure: { status: "forbidden" } };
   }
   return { ok: true, project };

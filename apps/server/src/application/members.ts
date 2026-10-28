@@ -44,7 +44,8 @@ export async function addMember(
 
 /**
  * Revokes a member and, in the same transaction, deletes the sessions of the
- * matching users so access ends immediately and unassigns their tasks that are
+ * matching users and revokes their personal API tokens so access ends immediately
+ * (and stays ended if they are added back), and unassigns their tasks that are
  * not done in every project, sending `in_progress` ones back to `todo` (project
  * memberships go by FK cascade). Configured
  * admins keep their sessions and tasks because they still have access.
@@ -60,6 +61,7 @@ export async function removeMember(
     if (!(await tx.removeMember(login))) return false;
     if (!adminLogins.includes(login)) {
       await tx.deleteSessionsByGithubLogin(login);
+      await tx.revokePersonalTokensByGithubLogin(login);
       await tx.unassignOpenTasksByGithubLogin(login);
     }
     return true;

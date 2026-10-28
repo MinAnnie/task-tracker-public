@@ -7,7 +7,7 @@ import { hashSessionToken } from "../application/session-token.ts";
 import { addMember, removeMember } from "../application/members.ts";
 import { endSession, findSessionUser } from "../application/sessions.ts";
 import { createDb } from "../db/client.ts";
-import { members, sessions, users } from "../db/schema.ts";
+import { apiTokens, members, sessions, users } from "../db/schema.ts";
 import { createDrizzleAuthStore } from "./drizzle-auth-store.ts";
 
 const { sql, db } = createDb(testDatabaseUrl);
@@ -29,7 +29,7 @@ const future = () => new Date(Date.now() + 60 * 60 * 1000);
 describe("createDrizzleAuthStore (Postgres)", () => {
   beforeEach(async () => {
     await db.execute(
-      rawSql`truncate table members, sessions, task_pull_requests, pull_requests, tasks, repositories, users, projects restart identity cascade`,
+      rawSql`truncate table api_tokens, members, sessions, task_pull_requests, pull_requests, tasks, repositories, users, projects restart identity cascade`,
     );
   });
 
@@ -231,6 +231,33 @@ describe("createDrizzleAuthStore (Postgres)", () => {
       expect(await removeMember({ store, adminLogins }, "mona")).toEqual({ status: "removed" });
       expect(await findSessionUser({ store, adminLogins }, login.sessionToken)).toBeUndefined();
       expect(await db.select().from(sessions)).toEqual([]);
+    });
+
+    it("revokes the personal API tokens of users matching a login, keeping earlier revocations", async () => {
+      const { id: octo } = await store.upsertUserByGithubId(profile);
+      const { id: mona } = await store.upsertUserByGithubId({ ...profile, githubId: 2, login: "Mona" });
+      const earlier = new Date("2026-01-01T00:00:00Z");
+      const token = (id: number, ownerUserId: number, revokedAt: Date | null = null) => ({
+        id,
+        ownerUserId,
+        name: "t",
+        tokenHash: `h${id}`,
+        tokenPrefix: "p",
+        revokedAt,
+      });
+      await db.insert(apiTokens).values([token(1, mona), token(2, mona, earlier), token(3, octo)]);
+
+      await store.revokePersonalTokensByGithubLogin("mona");
+
+      const rows = await db
+        .select({ id: apiTokens.id, revokedAt: apiTokens.revokedAt })
+        .from(apiTokens)
+        .orderBy(apiTokens.id);
+      expect(rows[0]?.revokedAt).toBeInstanceOf(Date);
+      expect(rows.slice(1)).toEqual([
+        { id: 2, revokedAt: earlier },
+        { id: 3, revokedAt: null },
+      ]);
     });
 
     it("revokes the sessions of a user who lost access on their next lookup", async () => {

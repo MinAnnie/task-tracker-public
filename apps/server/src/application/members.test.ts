@@ -106,6 +106,25 @@ describe("members", () => {
       expect(store.transactions).toBe(1);
     });
 
+    it("revokes the removed member's personal API tokens in the same transaction", async () => {
+      await store.addMember({ githubLogin: "mona", addedByUserId: null });
+      const { id: mona } = await store.upsertUserByGithubId({ githubId: 2, login: "Mona", name: null, avatarUrl: null });
+      const earlier = new Date("2026-01-01T00:00:00Z");
+      store.personalTokens.push(
+        { id: 1, ownerUserId: mona, revokedAt: null },
+        { id: 2, ownerUserId: mona, revokedAt: earlier },
+        { id: 3, ownerUserId: admin.id, revokedAt: null },
+      );
+
+      expect(await removeMember(deps, "MONA")).toEqual({ status: "removed" });
+      expect(store.personalTokens.map((t) => [t.id, t.revokedAt])).toEqual([
+        [1, createdAt],
+        [2, earlier],
+        [3, null],
+      ]);
+      expect(store.transactions).toBe(1);
+    });
+
     it("unassigns the removed member's open tasks across all projects in the same transaction", async () => {
       await store.addMember({ githubLogin: "mona", addedByUserId: null });
       const { id: mona } = await store.upsertUserByGithubId({

@@ -5,7 +5,8 @@ import { compareTasks, dependentsOf, filterTasks, isReady, NO_TASK_FILTERS, type
 import type { NewTaskInput, Project, TaskChanges, TaskPriority, TaskStatus } from "./types.ts";
 
 export const MISSING_TOKEN_MESSAGE =
-  "TRACKER_API_TOKEN is not set. Create an API token in Task Tracker (Admin → project → API tokens), " +
+  "TRACKER_API_TOKEN is not set. Create an API token in Task Tracker (a personal token under account menu → " +
+  "API tokens, or a project token under Admin → project → API tokens), " +
   "export it as TRACKER_API_TOKEN in the environment that starts this MCP server, and restart it.";
 
 export const MISSING_API_URL_MESSAGE =
@@ -80,7 +81,10 @@ export function createToolHandlers({ client, config }: ToolDeps) {
     }
   }
 
-  /** The project to work on: the argument, else TRACKER_PROJECT, else the token's only project. */
+  /**
+   * The project to work on: the argument, else TRACKER_PROJECT, else the token's only visible project.
+   * A personal token usually sees several, so the model must then pass `project`.
+   */
   async function resolveProject(api: TrackerClient, requested: string | undefined): Promise<Project> {
     const projects = await api.listProjects();
     if (projects.length === 0) throw new ToolError("No project is visible to this token.");
@@ -88,7 +92,10 @@ export function createToolHandlers({ client, config }: ToolDeps) {
     if (slug === undefined) {
       if (projects.length === 1) return projects[0]!;
       const slugs = projects.map((p) => p.slug).join(", ");
-      throw new ToolError(`Several projects are visible (${slugs}); pass "project" or set TRACKER_PROJECT.`);
+      throw new ToolError(
+        `Several projects are visible to this token (${slugs}). Pass "project" with one of these slugs ` +
+          "(or set TRACKER_PROJECT for a default).",
+      );
     }
     const project = projects.find((p) => p.slug.toLowerCase() === slug);
     if (project === undefined) {

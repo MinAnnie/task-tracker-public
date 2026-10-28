@@ -28,13 +28,15 @@ export class InMemoryApiTokenStore implements ApiTokenStore {
   }
 
   async listProjectTokens(projectId: number) {
-    return this.tokens
-      .filter((t) => t.projectId === projectId)
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || b.id - a.id)
-      .map((t) => this.toRecord(t));
+    return this.newestFirst(this.tokens.filter((t) => t.projectId === projectId));
+  }
+
+  async listPersonalTokens(ownerUserId: number) {
+    return this.newestFirst(this.tokens.filter((t) => t.ownerUserId === ownerUserId));
   }
 
   async createToken(token: NewApiToken) {
+    if ((token.projectId === null) === (token.ownerUserId === null)) throw new Error("api_tokens_project_xor_owner");
     if (this.tokens.some((t) => t.tokenHash === token.tokenHash)) throw new Error("duplicate token_hash");
     const stored: StoredApiToken = {
       ...token,
@@ -54,10 +56,18 @@ export class InMemoryApiTokenStore implements ApiTokenStore {
     return true;
   }
 
+  async revokePersonalToken(ownerUserId: number, tokenId: number, at: Date) {
+    const token = this.tokens.find((t) => t.id === tokenId && t.ownerUserId === ownerUserId);
+    if (token === undefined) return false;
+    token.revokedAt ??= at;
+    return true;
+  }
+
   async findTokenByHash(tokenHash: string) {
     const token = this.tokens.find((t) => t.tokenHash === tokenHash);
-    const project = token && this.projects.find((p) => p.id === token.projectId);
-    if (token === undefined || project === undefined) return undefined;
+    if (token === undefined) return undefined;
+    const project = token.projectId === null ? null : this.projects.find((p) => p.id === token.projectId);
+    if (project === undefined) return undefined;
     const { id, scope, expiresAt, lastUsedAt, revokedAt } = token;
     const user = this.users.find((u) => u.id === token.createdByUserId);
     const creator = user
@@ -72,6 +82,12 @@ export class InMemoryApiTokenStore implements ApiTokenStore {
     if (token.lastUsedAt !== null && token.lastUsedAt.getTime() > staleBefore.getTime()) return;
     token.lastUsedAt = at;
     this.touches += 1;
+  }
+
+  private newestFirst(tokens: StoredApiToken[]) {
+    return tokens
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || b.id - a.id)
+      .map((t) => this.toRecord(t));
   }
 
   private toRecord(t: StoredApiToken): ApiTokenRecord {

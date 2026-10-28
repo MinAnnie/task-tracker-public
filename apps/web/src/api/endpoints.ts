@@ -125,6 +125,14 @@ export const createApiToken = (slug: string, input: NewApiTokenInput) =>
 export const revokeApiToken = (slug: string, id: number) =>
   apiRequest<void>(`${adminProjectPath(slug)}/tokens/${id}`, { method: "DELETE" });
 
+/** The signed-in user's own personal tokens (cookie session only). */
+export const fetchPersonalApiTokens = () => apiRequest<ApiToken[]>("/api/account/tokens");
+
+export const createPersonalApiToken = (input: NewApiTokenInput) =>
+  apiRequest<CreatedApiToken>("/api/account/tokens", { method: "POST", body: input });
+
+export const revokePersonalApiToken = (id: number) => apiRequest<void>(`/api/account/tokens/${id}`, { method: "DELETE" });
+
 export const fetchAdminStages = (slug: string) => apiRequest<Stage[]>(`${adminProjectPath(slug)}/stages`);
 
 export const createStage = (slug: string, name: string) =>

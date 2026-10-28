@@ -62,6 +62,15 @@ describe("TrackerClient errors", () => {
     );
   });
 
+  it("maps a 403 forbidden read of a project to a clear message", async () => {
+    const { client } = setup(() => json(403, { error: "forbidden" }));
+    const error = await failure(client.listTasks("ops"));
+    expect(error.kind).toBe("forbidden");
+    expect(error.message).toBe(
+      'The owner of this personal token cannot access project "ops" (403 forbidden). Use list_projects to see the projects it can access.',
+    );
+  });
+
   it("maps 404 project_not_found and task_not_found", async () => {
     const project = setup(() => json(404, { error: "project_not_found" }));
     const projectError = await failure(project.client.listTasks("nope"));
@@ -168,7 +177,7 @@ describe("TrackerClient writes", () => {
   it("explains a forbidden write", async () => {
     const { client } = setup(() => json(403, { error: "forbidden" }));
     expect((await failure(client.updateTask("rf", "RF-1", { status: "done" }))).message).toBe(
-      "Not allowed (403 forbidden): changing a task's status needs the token's creator to be its assignee or an admin, and the creator must still have access to the project.",
+      "Not allowed (403 forbidden): changing a task's status needs the token's creator (or owner) to be its assignee or an admin, and that user must still have access to the project.",
     );
   });
 

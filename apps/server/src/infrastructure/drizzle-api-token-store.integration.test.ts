@@ -4,9 +4,12 @@ import { testDatabaseUrl } from "../../test/integration/database-url.ts";
 import {
   authenticateApiToken,
   createApiToken,
+  createPersonalApiToken,
   hashApiToken,
   listApiTokens,
+  listPersonalApiTokens,
   revokeApiToken,
+  revokePersonalApiToken,
   type ApiTokensDeps,
 } from "../application/api-tokens.ts";
 import type { AuthenticatedUser } from "../application/sessions.ts";
@@ -26,6 +29,8 @@ const NOW = new Date("2026-05-01T12:00:00.000Z");
 
 describe("createDrizzleApiTokenStore (Postgres)", () => {
   let admin: AuthenticatedUser;
+  let mona: AuthenticatedUser;
+  let members: Set<string>;
   let shopId: number;
   let clock: Date;
   let deps: ApiTokensDeps;
@@ -36,11 +41,20 @@ describe("createDrizzleApiTokenStore (Postgres)", () => {
     );
     const [user] = await db.insert(users).values({ githubId: 1, githubLogin: "OctoCat" }).returning();
     admin = { id: user!.id, githubLogin: "OctoCat", name: null, avatarUrl: null, role: "admin" };
+    const [member] = await db.insert(users).values({ githubId: 2, githubLogin: "Mona", name: "Mona" }).returning();
+    mona = { id: member!.id, githubLogin: "Mona", name: "Mona", avatarUrl: null, role: "member" };
+    members = new Set(["mona"]);
     const [shop] = await db.insert(projects).values({ slug: "shop", name: "Shop", taskKeyPrefix: "RF" }).returning();
     await db.insert(projects).values({ slug: "blog", name: "Blog", taskKeyPrefix: "BL" });
     shopId = shop!.id;
     clock = NOW;
-    deps = { store, now: () => clock, generateToken: () => TOKEN };
+    deps = {
+      store,
+      now: () => clock,
+      generateToken: () => TOKEN,
+      adminLogins: ["octocat"],
+      isMember: async (login) => members.has(login),
+    };
   });
 
   it("stores only the hash and prefix of a created token", async () => {
@@ -150,5 +164,76 @@ describe("createDrizzleApiTokenStore (Postgres)", () => {
     await createApiToken(deps, "shop", { name: "A", expiresInDays: 1 }, admin);
     clock = new Date(NOW.getTime() + 24 * 60 * 60 * 1000);
     expect(await authenticateApiToken(deps, TOKEN)).toBeUndefined();
+  });
+
+  describe("personal tokens", () => {
+    const OTHER = `ttk_${"P".repeat(43)}`;
+
+    it("stores a personal token with its owner and no project", async () => {
+      await createPersonalApiToken(deps, { name: "Laptop" }, mona);
+      expect(await db.select().from(apiTokens)).toEqual([
+        expect.objectContaining({ projectId: null, ownerUserId: mona.id, createdByUserId: mona.id, scope: "read" }),
+      ]);
+    });
+
+    it("refuses a token with both or neither of a project and an owner", async () => {
+      const row = { name: "x", tokenHash: "h", tokenPrefix: "p" };
+      await expect(db.insert(apiTokens).values(row)).rejects.toThrow();
+      await expect(db.insert(apiTokens).values({ ...row, projectId: shopId, ownerUserId: mona.id })).rejects.toThrow();
+    });
+
+    it("lists only the owner's personal tokens, and project lists never show them", async () => {
+      await createPersonalApiToken(deps, { name: "Old" }, mona);
+      await db.update(apiTokens).set({ createdAt: new Date("2026-01-01T00:00:00Z") });
+      await createPersonalApiToken({ ...deps, generateToken: () => `ttk_${"R".repeat(43)}` }, { name: "New" }, mona);
+      await createPersonalApiToken({ ...deps, generateToken: () => OTHER }, { name: "Admin" }, admin);
+      await createApiToken({ ...deps, generateToken: () => `ttk_${"S".repeat(43)}` }, "shop", { name: "Shop" }, mona);
+
+      expect((await listPersonalApiTokens(deps, mona)).map((t) => [t.name, t.createdBy])).toEqual([
+        ["New", "Mona"],
+        ["Old", "Mona"],
+      ]);
+      const shop = await listApiTokens(deps, "shop");
+      expect(shop.status === "ok" && shop.tokens.map((t) => t.name)).toEqual(["Shop"]);
+    });
+
+    it("revokes only the owner's tokens, idempotently", async () => {
+      await createPersonalApiToken(deps, { name: "Mine" }, mona);
+      await createApiToken({ ...deps, generateToken: () => OTHER }, "shop", { name: "Shop" }, mona);
+      const ids = (await db.select({ id: apiTokens.id }).from(apiTokens).orderBy(apiTokens.id)).map((r) => r.id);
+
+      expect(await revokePersonalApiToken(deps, admin, String(ids[0]))).toEqual({ status: "token_not_found" });
+      expect(await revokePersonalApiToken(deps, mona, String(ids[1]))).toEqual({ status: "token_not_found" });
+      expect(await revokeApiToken(deps, "shop", String(ids[0]))).toEqual({ status: "token_not_found" });
+      expect(await revokePersonalApiToken(deps, mona, String(ids[0]))).toEqual({ status: "revoked" });
+      clock = new Date(NOW.getTime() + 5000);
+      expect(await revokePersonalApiToken(deps, mona, String(ids[0]))).toEqual({ status: "revoked" });
+
+      const rows = await db.select({ revokedAt: apiTokens.revokedAt }).from(apiTokens).orderBy(apiTokens.id);
+      expect(rows.map((r) => r.revokedAt)).toEqual([NOW, null]);
+      expect(await authenticateApiToken(deps, TOKEN)).toBeUndefined();
+    });
+
+    it("authenticates as the owner with their current role, until they lose it", async () => {
+      await createPersonalApiToken(deps, { name: "Mine" }, mona);
+      expect(await authenticateApiToken(deps, TOKEN)).toEqual({
+        kind: "api_token",
+        tokenId: expect.any(Number),
+        projectId: null,
+        project: null,
+        scope: "read",
+        creator: { id: mona.id, githubLogin: "Mona", name: "Mona", avatarUrl: null },
+        owner: { id: mona.id, githubLogin: "Mona", name: "Mona", avatarUrl: null, role: "member" },
+      });
+
+      members.clear();
+      expect(await authenticateApiToken(deps, TOKEN)).toBeUndefined();
+    });
+
+    it("deletes personal tokens with their owner", async () => {
+      await createPersonalApiToken(deps, { name: "Mine" }, mona);
+      await db.delete(users);
+      expect(await db.select().from(apiTokens)).toEqual([]);
+    });
   });
 });

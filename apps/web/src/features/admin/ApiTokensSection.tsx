@@ -1,4 +1,4 @@
-import { useId, useState, type FormEvent } from "react";
+import { useId, useState, type FormEvent, type ReactNode } from "react";
 import type { ApiToken, ApiTokenScope, NewApiTokenInput } from "../../api/types.ts";
 import buttons from "../../ui/Button.module.css";
 import styles from "./Admin.module.css";
@@ -20,7 +20,16 @@ export interface ApiTokensSectionProps {
   /** Why the last creation failed. */
   error?: string;
   onRevoke: (token: ApiToken) => void;
+  /** What the tokens are for, under the title. */
+  hint?: ReactNode;
+  /** Whether the access choice (read only or read & write) is offered; otherwise tokens are read only. */
+  allowWrite?: boolean;
+  /** Shown instead of the access choice when {@link allowWrite} is false. */
+  readOnlyNote?: string;
 }
+
+const PROJECT_HINT =
+  "Let scripts and AI agents read this project’s tasks without signing in. Read & write tokens can also create and edit tasks.";
 
 const STATUS_LABELS: Record<ApiToken["status"], string> = {
   active: "Active",
@@ -28,7 +37,17 @@ const STATUS_LABELS: Record<ApiToken["status"], string> = {
   revoked: "Revoked",
 };
 
-export function ApiTokensSection({ tokens, loadError, onCreate, creating, error, onRevoke }: ApiTokensSectionProps) {
+export function ApiTokensSection({
+  tokens,
+  loadError,
+  onCreate,
+  creating,
+  error,
+  onRevoke,
+  hint = PROJECT_HINT,
+  allowWrite = true,
+  readOnlyNote,
+}: ApiTokensSectionProps) {
   const id = useId();
   const [name, setName] = useState("");
   const [expiry, setExpiry] = useState("90");
@@ -45,7 +64,11 @@ export function ApiTokensSection({ tokens, loadError, onCreate, creating, error,
     }
     setLocalError(undefined);
     try {
-      await onCreate({ name: parsed.name, expiresInDays: expiry === "never" ? null : Number(expiry), scope });
+      await onCreate({
+        name: parsed.name,
+        expiresInDays: expiry === "never" ? null : Number(expiry),
+        scope: allowWrite ? scope : "read",
+      });
       setName("");
       setScope("read");
     } catch {
@@ -98,10 +121,7 @@ export function ApiTokensSection({ tokens, loadError, onCreate, creating, error,
         <h2 id="api-tokens-h" className={styles.cardTitle}>
           API tokens
         </h2>
-        <p className={styles.cardHint}>
-          Let scripts and AI agents read this project’s tasks without signing in. Read & write tokens can also create
-          and edit tasks.
-        </p>
+        <p className={styles.cardHint}>{hint}</p>
       </div>
       {list}
       <form className={styles.inlineForm} onSubmit={submit} noValidate>
@@ -137,27 +157,30 @@ export function ApiTokensSection({ tokens, loadError, onCreate, creating, error,
             ))}
           </select>
         </div>
-        <fieldset role="radiogroup" aria-labelledby={`${id}-access`} className={styles.choice}>
-          <legend id={`${id}-access`} className={styles.choiceLegend}>
-            Access
-          </legend>
-          {API_TOKEN_SCOPE_OPTIONS.map((option) => (
-            <label key={option.value} className={styles.choiceOption}>
-              <input
-                type="radio"
-                name={`${id}-scope`}
-                value={option.value}
-                checked={scope === option.value}
-                onChange={() => setScope(option.value)}
-              />
-              {option.label}
-            </label>
-          ))}
-        </fieldset>
+        {allowWrite && (
+          <fieldset role="radiogroup" aria-labelledby={`${id}-access`} className={styles.choice}>
+            <legend id={`${id}-access`} className={styles.choiceLegend}>
+              Access
+            </legend>
+            {API_TOKEN_SCOPE_OPTIONS.map((option) => (
+              <label key={option.value} className={styles.choiceOption}>
+                <input
+                  type="radio"
+                  name={`${id}-scope`}
+                  value={option.value}
+                  checked={scope === option.value}
+                  onChange={() => setScope(option.value)}
+                />
+                {option.label}
+              </label>
+            ))}
+          </fieldset>
+        )}
         <button type="submit" className={buttons.button} disabled={creating}>
           {creating ? "Creating…" : "Create token"}
         </button>
       </form>
+      {!allowWrite && readOnlyNote && <p className={styles.cardHint}>{readOnlyNote}</p>}
       {scope === "write" && (
         <p className={styles.warning}>
           This token can create and edit tasks and their dependencies as you, with your access. Give it only to tools

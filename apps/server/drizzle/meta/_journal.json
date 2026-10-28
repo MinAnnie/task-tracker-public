@@ -85,6 +85,13 @@
       "when": 1793209241490,
       "tag": "0011_api_tokens_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1793225605547,
+      "tag": "0012_api_tokens_personal",
+      "breakpoints": true
     }
   ]
 }

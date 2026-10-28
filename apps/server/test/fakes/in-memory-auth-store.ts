@@ -31,6 +31,8 @@ export class InMemoryAuthStore implements AuthStore {
   members: StoredMember[] = [];
   /** Tasks seeded by tests; only their assignee is managed here. */
   tasks: StoredTask[] = [];
+  /** Personal API tokens seeded by tests; only their revocation is managed here. */
+  personalTokens: { id: number; ownerUserId: number; revokedAt: Date | null }[] = [];
   transactions = 0;
   /** Clock used for `members.created_at` defaults. */
   now: () => Date = () => new Date();
@@ -115,6 +117,15 @@ export class InMemoryAuthStore implements AuthStore {
     const before = this.members.length;
     this.members = this.members.filter((m) => m.githubLogin !== githubLogin);
     return this.members.length < before;
+  }
+
+  async revokePersonalTokensByGithubLogin(githubLogin: string) {
+    const userIds = new Set(
+      this.users.filter((u) => u.login.toLowerCase() === githubLogin.toLowerCase()).map((u) => u.id),
+    );
+    for (const token of this.personalTokens) {
+      if (userIds.has(token.ownerUserId)) token.revokedAt ??= this.now();
+    }
   }
 
   async unassignOpenTasksByGithubLogin(githubLogin: string) {

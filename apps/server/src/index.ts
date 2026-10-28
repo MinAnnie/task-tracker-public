@@ -3,9 +3,12 @@ import { createApp } from "./app.ts";
 import {
   authenticateApiToken,
   createApiToken,
+  createPersonalApiToken,
   listApiTokens,
+  listPersonalApiTokens,
   resolveApiTokenActor,
   revokeApiToken,
+  revokePersonalApiToken,
 } from "./application/api-tokens.ts";
 import { completeGithubLogin } from "./application/complete-github-login.ts";
 import { resolveDiscordCaller } from "./application/discord-caller.ts";
@@ -71,7 +74,11 @@ const notifications = createNotificationPublisher({
   discordBotToken: config.discordBotToken,
   appBaseUrl: config.appBaseUrl,
 });
-const apiTokensDeps = { store: createDrizzleApiTokenStore(db) };
+const apiTokensDeps = {
+  store: createDrizzleApiTokenStore(db),
+  adminLogins,
+  isMember: (githubLogin: string) => authStore.isMember(githubLogin),
+};
 /** Per API token, in this process's memory. */
 const apiTokenRateLimiter = createInMemoryRateLimiter({ limit: 120, windowMs: 60_000 });
 const stagesDeps = { store: createDrizzleStageStore(db) };
@@ -157,8 +164,10 @@ const app = createApp({
   listApiTokens: (slug) => listApiTokens(apiTokensDeps, slug),
   createApiToken: (slug, body, actor) => createApiToken(apiTokensDeps, slug, body, actor),
   revokeApiToken: (slug, tokenId) => revokeApiToken(apiTokensDeps, slug, tokenId),
-  resolveApiTokenActor: (caller) =>
-    resolveApiTokenActor({ adminLogins, isMember: (githubLogin) => authStore.isMember(githubLogin) }, caller),
+  resolveApiTokenActor: (caller) => resolveApiTokenActor(apiTokensDeps, caller),
+  listPersonalApiTokens: (owner) => listPersonalApiTokens(apiTokensDeps, owner),
+  createPersonalApiToken: (body, owner) => createPersonalApiToken(apiTokensDeps, body, owner),
+  revokePersonalApiToken: (owner, tokenId) => revokePersonalApiToken(apiTokensDeps, owner, tokenId),
   listProjectStages: (viewer, slug) => listProjectStages(tasksDeps, viewer, slug),
   listStages: (slug) => listStages(stagesDeps, slug),
   createStage: (slug, body) => createStage(stagesDeps, slug, body),

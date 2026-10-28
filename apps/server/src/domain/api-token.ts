@@ -1,6 +1,9 @@
+import type { Role } from "./resolve-role.ts";
+
 /**
- * What an API token may do: `read` the project, or also `write` a few task routes
- * (create, edit, dependencies) acting as the admin who created it.
+ * What an API token may do: `read`, or also `write` a few task routes (create, edit,
+ * dependencies) acting as the user who created it. A project token reaches one project;
+ * a personal token reaches every project its owner can access right now.
  */
 export const API_TOKEN_SCOPES = ["read", "write"] as const;
 export type ApiTokenScope = (typeof API_TOKEN_SCOPES)[number];
@@ -38,6 +41,11 @@ export function normalizeApiTokenExpiresInDays(value: unknown): number | null | 
 export function normalizeApiTokenScope(value: unknown): ApiTokenScope | undefined {
   if (value === undefined) return "read";
   return API_TOKEN_SCOPES.find((scope) => scope === value);
+}
+
+/** Personal tokens of members are read only; admins may also hold write tokens. */
+export function personalApiTokenScopeAllowed(role: Role, scope: ApiTokenScope): boolean {
+  return scope === "read" || role === "admin";
 }
 
 /** Whether `value` is shaped like an API token, so malformed ones skip the database. */

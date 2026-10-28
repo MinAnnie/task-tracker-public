@@ -14,7 +14,7 @@ const CHANGING = { readOnlyHint: false, destructiveHint: true, idempotentHint: t
 
 const WRITE_TOKEN_NOTE =
   "Needs a Read & write token; with a read-only token it fails with instructions to create one. " +
-  "It acts as the admin who created the token.";
+  "It acts as the user who created the token (a project token) or owns it (a personal token).";
 
 const key = z.string().min(1).describe("Task key such as 'RF-14' (case-insensitive).");
 const dependsOnKey = z.string().min(1).describe("Key of the task depended on, such as 'RF-13'.");
@@ -24,7 +24,8 @@ const project = z
   .min(1)
   .optional()
   .describe(
-    "Project slug (see list_projects). Optional: defaults to TRACKER_PROJECT, else the token's only project.",
+    "Project slug (see list_projects). Optional: defaults to TRACKER_PROJECT, else the token's only project. " +
+      "Required when the token sees several projects (a personal token) and TRACKER_PROJECT is unset.",
   );
 
 /** An MCP server exposing the Task Tracker read API as tools. */
@@ -34,7 +35,9 @@ export function createServer(deps: ToolDeps): McpServer {
     { name: SERVER_NAME, version: SERVER_VERSION },
     {
       instructions:
-        "Access to a Task Tracker project (tasks, priorities, dependencies, pull requests). " +
+        "Access to Task Tracker projects (tasks, priorities, dependencies, pull requests). " +
+        "A project token sees one project; a personal token sees every project its owner can access, so pass " +
+        "'project' (a slug from list_projects) unless TRACKER_PROJECT sets a default. " +
         "Use next_tasks to pick what to work on, list_tasks to browse or filter the board, " +
         "and get_task for the full brief of one task before implementing it. " +
         "create_task, update_task, add_dependency and remove_dependency modify data and need a Read & write token.",
@@ -47,7 +50,8 @@ export function createServer(deps: ToolDeps): McpServer {
       title: "List projects",
       description:
         "List the Task Tracker projects visible to the configured API token (slug, name, task key prefix). " +
-        "Tokens are project-scoped, so this is usually a single project. Use it to find the slug for other tools.",
+        "A project token sees its one project; a personal token sees every project its owner can access. " +
+        "Use it to find the slug for the 'project' argument of other tools.",
       annotations: READ_ONLY,
     },
     () => tools.listProjects(),

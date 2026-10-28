@@ -5,6 +5,7 @@ import {
   normalizeApiTokenExpiresInDays,
   normalizeApiTokenName,
   normalizeApiTokenScope,
+  personalApiTokenScopeAllowed,
 } from "./api-token.ts";
 
 describe("normalizeApiTokenName", () => {
@@ -84,5 +85,17 @@ describe("apiTokenStatus", () => {
 
   it("is revoked when revoked, even if also expired", () => {
     expect(apiTokenStatus({ expiresAt: new Date("2026-01-01T00:00:00Z"), revokedAt: now }, now)).toBe("revoked");
+  });
+});
+
+describe("personalApiTokenScopeAllowed", () => {
+  it("lets admins hold read and write personal tokens", () => {
+    expect(personalApiTokenScopeAllowed("admin", "read")).toBe(true);
+    expect(personalApiTokenScopeAllowed("admin", "write")).toBe(true);
+  });
+
+  it("keeps the personal tokens of members read only", () => {
+    expect(personalApiTokenScopeAllowed("member", "read")).toBe(true);
+    expect(personalApiTokenScopeAllowed("member", "write")).toBe(false);
   });
 });

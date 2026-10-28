@@ -1,11 +1,11 @@
-import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import type { PgDatabase } from "drizzle-orm/pg-core";
 import type { PostgresJsQueryResultHKT } from "drizzle-orm/postgres-js";
 import type { AuthStore } from "../application/auth-store.ts";
 import * as schema from "../db/schema.ts";
 import type { TaskStatus } from "../domain/task-status.ts";
 
-const { members, sessions, tasks, users } = schema;
+const { apiTokens, members, sessions, tasks, users } = schema;
 
 /** A database handle or an open transaction; both expose the same query API. */
 export type Executor = PgDatabase<PostgresJsQueryResultHKT, typeof schema>;
@@ -96,6 +96,13 @@ export function createDrizzleAuthStore(db: Executor): AuthStore {
         .where(eq(members.githubLogin, githubLogin))
         .returning({ id: members.id });
       return removed.length > 0;
+    },
+
+    async revokePersonalTokensByGithubLogin(githubLogin) {
+      await db
+        .update(apiTokens)
+        .set({ revokedAt: sql`now()` })
+        .where(and(isNull(apiTokens.revokedAt), inArray(apiTokens.ownerUserId, usersMatchingLogin(db, githubLogin))));
     },
 
     async unassignOpenTasksByGithubLogin(githubLogin) {

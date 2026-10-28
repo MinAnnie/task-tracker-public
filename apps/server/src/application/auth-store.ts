@@ -69,6 +69,11 @@ export interface AuthStore {
   /** Deletes a member by lowercased login; resolves whether one existed. */
   removeMember(githubLogin: string): Promise<boolean>;
   /**
+   * Revokes, now, the personal API tokens of every user whose login matches
+   * `githubLogin` case-insensitively; already revoked ones keep their revocation time.
+   */
+  revokePersonalTokensByGithubLogin(githubLogin: string): Promise<void>;
+  /**
    * Clears the assignee of tasks in every project that are not `done` and are
    * assigned to a user whose login matches `githubLogin` case-insensitively.
    * Unassigned `in_progress` tasks go back to `todo`; other statuses stay.

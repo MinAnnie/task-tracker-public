@@ -127,11 +127,33 @@ describe("project resolution", () => {
     expect(client.listTasks).toHaveBeenNthCalledWith(2, "ops");
   });
 
-  it("asks for a project when the token sees several and none is configured", async () => {
+  it("asks for a project when the token sees several (a personal token) and none is configured", async () => {
     const client = fakeClient({ listProjects: vi.fn(async () => [RF, OPS]) });
-    const result = await createToolHandlers({ client, config }).listTasks({});
-    expect(result.isError).toBe(true);
-    expect(text(result)).toBe('Several projects are visible (rf, ops); pass "project" or set TRACKER_PROJECT.');
+    const tools = createToolHandlers({ client, config });
+    for (const result of [await tools.listTasks({}), await tools.nextTasks({}), await tools.getTask({ key: "RF-1" })]) {
+      expect(result.isError).toBe(true);
+      expect(text(result)).toBe(
+        'Several projects are visible to this token (rf, ops). Pass "project" with one of these slugs ' +
+          "(or set TRACKER_PROJECT for a default).",
+      );
+    }
+    expect(client.listTasks).not.toHaveBeenCalled();
+  });
+
+  it("lists every project a personal token can access", async () => {
+    const client = fakeClient({ listProjects: vi.fn(async () => [RF, OPS]) });
+    const result = await createToolHandlers({ client, config }).listProjects();
+    expect(text(result)).toContain("rf");
+    expect(text(result)).toContain("ops");
+  });
+
+  it("works across projects with a personal token, one call per project", async () => {
+    const client = fakeClient({ listProjects: vi.fn(async () => [RF, OPS]) });
+    const tools = createToolHandlers({ client, config });
+    await tools.listTasks({ project: "rf" });
+    await tools.createTask({ project: "ops", title: "Rotate keys" });
+    expect(client.listTasks).toHaveBeenCalledWith("rf");
+    expect(client.createTask).toHaveBeenCalledWith("ops", { title: "Rotate keys" });
   });
 
   it("rejects a project the token cannot see", async () => {

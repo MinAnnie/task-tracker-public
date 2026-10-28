@@ -37,6 +37,7 @@ export {
   normalizeApiTokenExpiresInDays,
   normalizeApiTokenName,
   normalizeApiTokenScope,
+  personalApiTokenScopeAllowed,
   type ApiTokenScope,
   type ApiTokenStatus,
 } from "./api-token.ts";
