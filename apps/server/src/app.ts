@@ -187,6 +187,7 @@ const INVALID_FIELD_ERRORS: Record<ProjectField, string> = {
   slug: "invalid_project_slug",
   taskKeyPrefix: "invalid_task_key_prefix",
   discordChannelId: "invalid_discord_channel_id",
+  discordInviteUrl: "invalid_discord_invite_url",
 };
 
 const INVALID_TASK_FIELD_ERRORS: Record<TaskField, string> = {

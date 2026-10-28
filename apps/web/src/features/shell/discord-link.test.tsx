@@ -14,7 +14,8 @@ const linked: CurrentUser = { ...enabled, discord: { id: "80351110224678912", us
 function setup(route: string, user: CurrentUser | (() => CurrentUser), overrides: Record<string, unknown> = {}) {
   const api = fakeApi({
     "GET /auth/me": user,
-    "GET /api/projects": projects,
+    // No project invite, so the board's Discord button never mixes with the account-linking copy.
+    "GET /api/projects": projects.map((project) => ({ ...project, discordInviteUrl: null })),
     "GET /api/projects/app/tasks": [boardTask({ key: "RF-1", title: "First task" })],
     ...overrides,
   });

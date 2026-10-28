@@ -57,6 +57,7 @@ export function BoardContainer() {
     <>
       <BoardView
         projectName={project?.name ?? slug}
+        discordInviteUrl={project?.discordInviteUrl}
         columns={columns}
         me={me}
         filters={filters}

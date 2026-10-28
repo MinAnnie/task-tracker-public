@@ -15,6 +15,7 @@ const projectColumns = {
   name: projects.name,
   taskKeyPrefix: projects.taskKeyPrefix,
   discordChannelId: projects.discordChannelId,
+  discordInviteUrl: projects.discordInviteUrl,
   createdAt: projects.createdAt,
 };
 
@@ -23,6 +24,7 @@ const refColumns = {
   slug: projects.slug,
   name: projects.name,
   taskKeyPrefix: projects.taskKeyPrefix,
+  discordInviteUrl: projects.discordInviteUrl,
 };
 
 /** Unique constraints of `projects` (named by drizzle-kit) and the field each guards. */

@@ -94,6 +94,7 @@ export class InMemoryProjectStore implements ProjectStore {
     if (conflict) return conflict;
     const stored: StoredProject = {
       ...project,
+      discordInviteUrl: project.discordInviteUrl ?? null,
       id: this.nextId++,
       createdAt: this.now(),
       nextTaskNumber: 1,
@@ -228,9 +229,10 @@ export class InMemoryProjectStore implements ProjectStore {
   }
 }
 
-const toRef = ({ id, slug, name, taskKeyPrefix }: ProjectRecord): ProjectRef => ({
+const toRef = ({ id, slug, name, taskKeyPrefix, discordInviteUrl }: ProjectRecord): ProjectRef => ({
   id,
   slug,
   name,
   taskKeyPrefix,
+  discordInviteUrl,
 });

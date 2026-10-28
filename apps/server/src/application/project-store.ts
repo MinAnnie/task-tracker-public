@@ -7,6 +7,8 @@ export interface ProjectRecord {
   /** Uppercased prefix of the project's task keys (`RF` in `RF-14`). */
   taskKeyPrefix: string;
   discordChannelId: string | null;
+  /** Discord server invite shown to the project participants. */
+  discordInviteUrl: string | null;
   createdAt: Date;
 }
 
@@ -23,6 +25,7 @@ export interface ProjectRef {
   slug: string;
   name: string;
   taskKeyPrefix: string;
+  discordInviteUrl: string | null;
 }
 
 export interface ProjectRepositoryRecord {
@@ -44,6 +47,8 @@ export interface NewProject {
   name: string;
   taskKeyPrefix: string;
   discordChannelId: string | null;
+  /** Defaults to `null` (no invite). */
+  discordInviteUrl?: string | null;
 }
 
 export type ProjectChanges = Partial<NewProject>;

@@ -64,6 +64,13 @@
       "when": 1791846360649,
       "tag": "0008_api_tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793207792957,
+      "tag": "0009_projects_discord_invite_url",
+      "breakpoints": true
     }
   ]
 }

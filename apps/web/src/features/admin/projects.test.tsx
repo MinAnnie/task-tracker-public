@@ -67,12 +67,19 @@ describe("Projects", () => {
     await user.clear(within(form).getByRole("textbox", { name: "Short key" }));
     await user.type(within(form).getByRole("textbox", { name: "Short key" }), "mobile");
     await user.type(within(form).getByRole("textbox", { name: /Discord channel ID/ }), "12345678901234567");
+    await user.type(within(form).getByRole("textbox", { name: /Discord server invite/ }), "https://discord.gg/mobile");
     await user.click(within(form).getByRole("button", { name: "Create project" }));
 
     await waitFor(() =>
       expect(api.calls).toContainEqual({
         route: "POST /api/admin/projects",
-        body: { name: "Acme Mobile", slug: "mobile", taskKeyPrefix: "AM", discordChannelId: "12345678901234567" },
+        body: {
+          name: "Acme Mobile",
+          slug: "mobile",
+          taskKeyPrefix: "AM",
+          discordChannelId: "12345678901234567",
+          discordInviteUrl: "https://discord.gg/mobile",
+        },
       }),
     );
     await waitFor(() => expect(location()).toBe("/admin/projects/mobile"));

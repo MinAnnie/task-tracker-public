@@ -15,8 +15,8 @@ import type { AuthenticatedUser } from "./sessions.ts";
 const sha256 = (value: string) => createHash("sha256").update(value).digest("hex");
 
 const admin: AuthenticatedUser = { id: 1, githubLogin: "OctoCat", name: null, avatarUrl: null, role: "admin" };
-const shop = { id: 3, slug: "shop", name: "Shop", taskKeyPrefix: "RF" };
-const blog = { id: 4, slug: "blog", name: "Blog", taskKeyPrefix: "BL" };
+const shop = { id: 3, slug: "shop", name: "Shop", taskKeyPrefix: "RF", discordInviteUrl: null };
+const blog = { id: 4, slug: "blog", name: "Blog", taskKeyPrefix: "BL", discordInviteUrl: null };
 const NOW = new Date("2026-05-01T12:00:00Z");
 const TOKEN = `ttk_${"a".repeat(43)}`;
 const DAY_MS = 24 * 60 * 60 * 1000;

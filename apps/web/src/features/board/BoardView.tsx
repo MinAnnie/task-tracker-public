@@ -11,6 +11,8 @@ import { TaskCard } from "./TaskCard.tsx";
 
 export interface BoardViewProps {
   projectName: string;
+  /** Invite to the project's Discord server; no Discord button without it. */
+  discordInviteUrl?: string | null;
   columns: BoardColumn[];
   me: string;
   filters: BoardFilters;
@@ -48,6 +50,17 @@ export function BoardView(props: BoardViewProps) {
           <p className={styles.subtitle}>Status updates automatically when a linked pull request is opened or merged.</p>
         </div>
         <div className={styles.actions}>
+          {props.discordInviteUrl && (
+            <a
+              href={props.discordInviteUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={buttons.button}
+              title="Open the project’s Discord server in a new tab"
+            >
+              Discord
+            </a>
+          )}
           <BoardToolbar
             filters={props.filters}
             stages={props.stages}

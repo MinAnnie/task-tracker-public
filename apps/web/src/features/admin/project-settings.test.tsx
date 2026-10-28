@@ -124,6 +124,49 @@ describe("Project settings", () => {
       expect(location()).toBe("/admin/projects/app");
     });
 
+    it("saves, clears and validates the Discord server invite", async () => {
+      const { api, user } = setup();
+      const form = await screen.findByRole("form", { name: "General" });
+      const invite = within(form).getByRole("textbox", { name: "Discord server invite" });
+      await waitFor(() => expect(invite).toHaveValue("https://discord.gg/acme"));
+
+      await user.clear(invite);
+      await user.type(invite, "https://example.com/x");
+      await user.click(within(form).getByRole("button", { name: "Save changes" }));
+      expect(invite).toHaveAccessibleDescription(expect.stringContaining("Paste an invite link like https://discord.gg/abc123."));
+      expect(invite).toHaveFocus();
+      expect(api.calls.filter((call) => call.route === "PATCH /api/admin/projects/app")).toEqual([]);
+
+      await user.clear(invite);
+      await user.type(invite, "https://discord.com/invite/new-one");
+      await user.click(within(form).getByRole("button", { name: "Save changes" }));
+      await waitFor(() =>
+        expect(api.calls).toContainEqual({
+          route: "PATCH /api/admin/projects/app",
+          body: { discordInviteUrl: "https://discord.com/invite/new-one" },
+        }),
+      );
+
+      await user.clear(invite);
+      await user.click(within(form).getByRole("button", { name: "Save changes" }));
+      await waitFor(() =>
+        expect(api.calls).toContainEqual({ route: "PATCH /api/admin/projects/app", body: { discordInviteUrl: null } }),
+      );
+    });
+
+    it("shows the server refusal of an invite on its field", async () => {
+      const { user } = setup({
+        "PATCH /api/admin/projects/app": reply(400, { error: "invalid_discord_invite_url" }),
+      });
+      const form = await screen.findByRole("form", { name: "General" });
+      const invite = within(form).getByRole("textbox", { name: "Discord server invite" });
+      await waitFor(() => expect(invite).toHaveValue("https://discord.gg/acme"));
+      await user.clear(invite);
+      await user.type(invite, "https://discord.gg/other");
+      await user.click(within(form).getByRole("button", { name: "Save changes" }));
+      expect(await within(form).findByText("Paste an invite link like https://discord.gg/abc123.")).toBeInTheDocument();
+    });
+
     it("moves to the new URL when the short key changes", async () => {
       const { user } = setup({
         "PATCH /api/admin/projects/app": adminProjectDetail({ slug: "web" }),

@@ -115,12 +115,16 @@ export const openApiDocument = {
       Project: {
         type: "object",
         additionalProperties: false,
-        required: ["id", "slug", "name", "taskKeyPrefix"],
+        required: ["id", "slug", "name", "taskKeyPrefix", "discordInviteUrl"],
         properties: {
           id: { type: "integer" },
           slug: { type: "string" },
           name: { type: "string" },
           taskKeyPrefix: { type: "string" },
+          discordInviteUrl: {
+            ...nullable({ type: "string" }),
+            description: "Invite to the project's Discord server, or null when none is set.",
+          },
         },
       },
       TaskStatus: { type: "string", enum: [...TASK_STATUSES] },

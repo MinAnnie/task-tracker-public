@@ -961,6 +961,7 @@ const project: ProjectRecord = {
   name: "Shop",
   taskKeyPrefix: "RF",
   discordChannelId: null,
+  discordInviteUrl: "https://discord.gg/shop",
   createdAt: new Date("2026-03-01T12:00:00Z"),
 };
 const projectJson = { ...project, createdAt: "2026-03-01T12:00:00.000Z" };
@@ -1001,6 +1002,7 @@ describe("POST /api/admin/projects", () => {
     [{ status: "invalid", field: "slug" }, 400, { error: "invalid_project_slug" }],
     [{ status: "invalid", field: "taskKeyPrefix" }, 400, { error: "invalid_task_key_prefix" }],
     [{ status: "invalid", field: "discordChannelId" }, 400, { error: "invalid_discord_channel_id" }],
+    [{ status: "invalid", field: "discordInviteUrl" }, 400, { error: "invalid_discord_invite_url" }],
     [{ status: "slug_taken" }, 409, { error: "slug_taken" }],
     [{ status: "prefix_taken" }, 409, { error: "prefix_taken" }],
   ] as const)("maps %j to %i", async (result, status, body) => {
@@ -1066,6 +1068,7 @@ describe("PATCH /api/admin/projects/:slug", () => {
     [{ status: "not_found" }, 404, { error: "project_not_found" }],
     [{ status: "empty_update" }, 400, { error: "empty_update" }],
     [{ status: "invalid", field: "slug" }, 400, { error: "invalid_project_slug" }],
+    [{ status: "invalid", field: "discordInviteUrl" }, 400, { error: "invalid_discord_invite_url" }],
     [{ status: "slug_taken" }, 409, { error: "slug_taken" }],
     [{ status: "prefix_taken" }, 409, { error: "prefix_taken" }],
     [{ status: "prefix_locked" }, 409, { error: "prefix_locked" }],
@@ -1237,7 +1240,9 @@ describe("DELETE /api/admin/projects/:slug/members/:githubLogin", () => {
 });
 
 describe("GET /api/projects", () => {
-  const refs = [{ id: 3, slug: "shop", name: "Shop", taskKeyPrefix: "RF" }];
+  const refs = [
+    { id: 3, slug: "shop", name: "Shop", taskKeyPrefix: "RF", discordInviteUrl: "https://discord.gg/shop" },
+  ];
 
   it.each([[admin], [member]])("returns the projects visible to %j", async (user) => {
     const list = vi.fn(async () => refs);
@@ -1772,7 +1777,7 @@ const tokenCaller: ApiTokenCaller = {
   kind: "api_token",
   tokenId: 5,
   projectId: 3,
-  project: { id: 3, slug: "shop", name: "Shop", taskKeyPrefix: "RF" },
+  project: { id: 3, slug: "shop", name: "Shop", taskKeyPrefix: "RF", discordInviteUrl: null },
 };
 const withToken = (caller: ApiTokenCaller = tokenCaller) => ({
   authenticateApiToken: vi.fn(async (token: string) => (token === API_TOKEN ? caller : undefined)),

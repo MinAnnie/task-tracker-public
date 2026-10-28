@@ -18,6 +18,7 @@ import type { AuthenticatedUser } from "./sessions.ts";
 
 const createdAt = new Date("2026-03-01T12:00:00Z");
 const CHANNEL = "123456789012345678";
+const INVITE = "https://discord.gg/shop";
 
 describe("projects", () => {
   let store: InMemoryProjectStore;
@@ -70,18 +71,19 @@ describe("projects", () => {
       await seedProject("blog", "BL");
       store.members.push({ id: 7, githubLogin: "mona" });
       await store.addProjectMember(shop.id, 7);
+      await store.updateProject(shop.id, { discordInviteUrl: INVITE });
     });
 
     it("shows every project to an admin", async () => {
       expect(await listVisibleProjects(deps, user("OctoCat", "admin"))).toEqual([
-        { id: expect.any(Number), slug: "blog", name: "BLOG", taskKeyPrefix: "BL" },
-        { id: expect.any(Number), slug: "shop", name: "SHOP", taskKeyPrefix: "RF" },
+        { id: expect.any(Number), slug: "blog", name: "BLOG", taskKeyPrefix: "BL", discordInviteUrl: null },
+        { id: expect.any(Number), slug: "shop", name: "SHOP", taskKeyPrefix: "RF", discordInviteUrl: INVITE },
       ]);
     });
 
     it("shows a member only their projects, matching the login case-insensitively", async () => {
       expect(await listVisibleProjects(deps, user("Mona", "member"))).toEqual([
-        { id: expect.any(Number), slug: "shop", name: "SHOP", taskKeyPrefix: "RF" },
+        { id: expect.any(Number), slug: "shop", name: "SHOP", taskKeyPrefix: "RF", discordInviteUrl: INVITE },
       ]);
     });
 
@@ -98,6 +100,7 @@ describe("projects", () => {
         slug: "Web-Shop",
         taskKeyPrefix: "rf",
         discordChannelId: CHANNEL,
+        discordInviteUrl: ` ${INVITE} `,
       });
 
       expect(result).toEqual({
@@ -108,14 +111,18 @@ describe("projects", () => {
           name: "Web Shop",
           taskKeyPrefix: "RF",
           discordChannelId: CHANNEL,
+          discordInviteUrl: INVITE,
           createdAt,
         },
       });
     });
 
-    it("defaults the Discord channel to null", async () => {
+    it("defaults the Discord channel and invite to null", async () => {
       const result = await createProject(deps, { name: "Shop", slug: "shop", taskKeyPrefix: "RF" });
-      expect(result).toMatchObject({ status: "created", project: { discordChannelId: null } });
+      expect(result).toMatchObject({
+        status: "created",
+        project: { discordChannelId: null, discordInviteUrl: null },
+      });
     });
 
     it.each([
@@ -129,6 +136,7 @@ describe("projects", () => {
       [{ name: "Shop", slug: "shop" }, "taskKeyPrefix"],
       [{ name: "Shop", slug: "shop", taskKeyPrefix: "RF", discordChannelId: "abc" }, "discordChannelId"],
       [{ name: "Shop", slug: "shop", taskKeyPrefix: "RF", discordChannelId: 1 }, "discordChannelId"],
+      [{ name: "Shop", slug: "shop", taskKeyPrefix: "RF", discordInviteUrl: "http://discord.gg/x" }, "discordInviteUrl"],
     ])("rejects %j as an invalid %s", async (input, field) => {
       expect(await createProject(deps, input)).toEqual({ status: "invalid", field });
       expect(store.projects).toEqual([]);
@@ -197,6 +205,22 @@ describe("projects", () => {
       expect(result).toEqual({ status: "updated", project: { ...shop, discordChannelId: null } });
     });
 
+    it("sets the Discord invite and clears it with null or an empty string", async () => {
+      expect(await updateProject(deps, "shop", { discordInviteUrl: INVITE })).toEqual({
+        status: "updated",
+        project: { ...shop, discordInviteUrl: INVITE },
+      });
+      expect(await updateProject(deps, "shop", { discordInviteUrl: "" })).toEqual({
+        status: "updated",
+        project: { ...shop, discordInviteUrl: null },
+      });
+      await store.updateProject(shop.id, { discordInviteUrl: INVITE });
+      expect(await updateProject(deps, "shop", { discordInviteUrl: null })).toEqual({
+        status: "updated",
+        project: { ...shop, discordInviteUrl: null },
+      });
+    });
+
     it("rejects an update without known fields", async () => {
       expect(await updateProject(deps, "shop", { other: 1 })).toEqual({ status: "empty_update" });
     });
@@ -208,6 +232,8 @@ describe("projects", () => {
       [{ slug: null }, "slug"],
       [{ taskKeyPrefix: "R-F" }, "taskKeyPrefix"],
       [{ discordChannelId: "1" }, "discordChannelId"],
+      [{ discordInviteUrl: "https://example.com/invite/x" }, "discordInviteUrl"],
+      [{ discordInviteUrl: 5 }, "discordInviteUrl"],
     ])("rejects %j as an invalid %s", async (input, field) => {
       expect(await updateProject(deps, "shop", input)).toEqual({ status: "invalid", field });
       expect(store.projects[0]).toMatchObject({ slug: "shop", name: "SHOP", taskKeyPrefix: "RF" });

@@ -21,8 +21,8 @@ export const me: CurrentUser = {
 export const admin: CurrentUser = { ...me, id: 2, githubLogin: "boss", name: "The Boss", role: "admin" };
 
 export const projects: Project[] = [
-  { id: 1, slug: "app", name: "Acme App", taskKeyPrefix: "RF" },
-  { id: 2, slug: "landing", name: "Acme Landing", taskKeyPrefix: "LD" },
+  { id: 1, slug: "app", name: "Acme App", taskKeyPrefix: "RF", discordInviteUrl: "https://discord.gg/acme" },
+  { id: 2, slug: "landing", name: "Acme Landing", taskKeyPrefix: "LD", discordInviteUrl: null },
 ];
 
 export function boardTask(overrides: Partial<BoardTask> = {}): BoardTask {
@@ -78,6 +78,7 @@ export const adminProjects: AdminProjectSummary[] = [
     name: "Acme App",
     taskKeyPrefix: "RF",
     discordChannelId: "1234567890123456789",
+    discordInviteUrl: "https://discord.gg/acme",
     createdAt: "2026-10-01T15:00:00.000Z",
     repositoryCount: 2,
     taskCount: 7,
@@ -89,6 +90,7 @@ export const adminProjects: AdminProjectSummary[] = [
     name: "Acme Landing",
     taskKeyPrefix: "LD",
     discordChannelId: null,
+    discordInviteUrl: null,
     createdAt: "2026-10-02T15:00:00.000Z",
     repositoryCount: 1,
     taskCount: 0,
@@ -103,6 +105,7 @@ export function adminProjectDetail(overrides: Partial<AdminProjectDetail> = {}):
     name: "Acme App",
     taskKeyPrefix: "RF",
     discordChannelId: "1234567890123456789",
+    discordInviteUrl: "https://discord.gg/acme",
     createdAt: "2026-10-01T15:00:00.000Z",
     repositories: [{ fullName: "acme/app-web", githubInstallationId: null }],
     members: [{ githubLogin: "juanperez", createdAt: "2026-10-09T15:00:00.000Z" }],

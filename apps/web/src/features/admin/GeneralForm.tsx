@@ -24,13 +24,14 @@ export interface GeneralFormProps {
   onDraftChange: () => void;
 }
 
-const FIELD_ORDER: (keyof ProjectValues)[] = ["name", "slug", "taskKeyPrefix", "discordChannelId"];
+const FIELD_ORDER: (keyof ProjectValues)[] = ["name", "slug", "taskKeyPrefix", "discordChannelId", "discordInviteUrl"];
 
 const valuesOf = (project: AdminProject): ProjectValues => ({
   name: project.name,
   slug: project.slug,
   taskKeyPrefix: project.taskKeyPrefix,
   discordChannelId: project.discordChannelId ?? "",
+  discordInviteUrl: project.discordInviteUrl ?? "",
 });
 
 /** Only the fields that differ from the saved project. */
@@ -41,6 +42,7 @@ function changesFrom(project: AdminProject, values: ProjectValues): ProjectChang
   if (next.slug !== project.slug) changes.slug = next.slug;
   if (next.taskKeyPrefix !== project.taskKeyPrefix) changes.taskKeyPrefix = next.taskKeyPrefix;
   if (next.discordChannelId !== project.discordChannelId) changes.discordChannelId = next.discordChannelId;
+  if (next.discordInviteUrl !== project.discordInviteUrl) changes.discordInviteUrl = next.discordInviteUrl;
   return changes;
 }
 
@@ -54,6 +56,7 @@ export function GeneralForm({ project, onSave, saving, error, onDraftChange }: G
     slug: useRef<HTMLInputElement>(null),
     taskKeyPrefix: useRef<HTMLInputElement>(null),
     discordChannelId: useRef<HTMLInputElement>(null),
+    discordInviteUrl: useRef<HTMLInputElement>(null),
   };
 
   const set = (field: keyof ProjectValues) => (value: string) => {
@@ -126,6 +129,20 @@ export function GeneralForm({ project, onSave, saving, error, onDraftChange }: G
           help="Where the bot posts updates. In Discord: right-click the channel › Copy Channel ID. Leave it empty for none."
           error={errors.discordChannelId}
           inputRef={refs.discordChannelId}
+        />
+        <TextField
+          label="Discord server invite"
+          mono
+          type="url"
+          inputMode="url"
+          value={values.discordInviteUrl}
+          onChange={set("discordInviteUrl")}
+          placeholder="https://discord.gg/abc123"
+          help="Shown on the board as a Discord button. In Discord: Invite People › copy a link that never expires. Leave it empty for none."
+          error={errors.discordInviteUrl}
+          inputRef={refs.discordInviteUrl}
+          autoCapitalize="off"
+          spellCheck={false}
         />
       </div>
       <div className={styles.formActions}>

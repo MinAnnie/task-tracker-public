@@ -7,6 +7,11 @@ const PROJECT_NAME_MAX_LENGTH = 100;
 const TASK_KEY_PREFIX = /^[A-Z][A-Z0-9]{0,9}$/i;
 /** Discord snowflake ids are 17–20 decimal digits. */
 const DISCORD_CHANNEL_ID = /^[0-9]{17,20}$/;
+/** Longest Discord invite URL accepted. */
+const DISCORD_INVITE_URL_MAX_LENGTH = 200;
+/** `discord.gg/<code>` or `(www.)discord.com/invite/<code>`, over https only, nothing else. */
+const DISCORD_INVITE_URL =
+  /^https:\/\/(?:discord\.gg\/|(?:www\.)?discord\.com\/invite\/)[A-Za-z0-9-]+$/i;
 /** GitHub repository names: 1–100 letters, digits, `-`, `_` or `.`. */
 const GITHUB_REPOSITORY_NAME = /^[A-Za-z0-9._-]{1,100}$/;
 
@@ -38,6 +43,18 @@ export function normalizeTaskKeyPrefix(value: unknown): string | undefined {
 export function normalizeDiscordChannelId(value: unknown): string | null | undefined {
   if (value === null) return null;
   return typeof value === "string" && DISCORD_CHANNEL_ID.test(value) ? value : undefined;
+}
+
+/**
+ * Validates a Discord server invite URL. `null` or a blank string means "no invite"
+ * and yields `null`; a valid URL is returned trimmed; anything else yields `undefined`.
+ */
+export function normalizeDiscordInviteUrl(value: unknown): string | null | undefined {
+  if (value === null) return null;
+  if (typeof value !== "string") return undefined;
+  const url = value.trim();
+  if (url === "") return null;
+  return url.length <= DISCORD_INVITE_URL_MAX_LENGTH && DISCORD_INVITE_URL.test(url) ? url : undefined;
 }
 
 /**

@@ -1,6 +1,7 @@
 import { normalizeGithubLogin } from "../domain/github-login.ts";
 import {
   normalizeDiscordChannelId,
+  normalizeDiscordInviteUrl,
   normalizeProjectName,
   normalizeProjectSlug,
   normalizeRepositoryFullName,
@@ -26,7 +27,7 @@ export interface ProjectsDeps {
 }
 
 /** Request field that failed validation; `body` means the body is not a JSON object. */
-export type ProjectField = "body" | "name" | "slug" | "taskKeyPrefix" | "discordChannelId";
+export type ProjectField = "body" | "name" | "slug" | "taskKeyPrefix" | "discordChannelId" | "discordInviteUrl";
 
 export interface ProjectDetail extends ProjectRecord {
   repositories: ProjectRepositoryRecord[];
@@ -95,6 +96,11 @@ function parseProjectFields(
     if (channel === undefined) return { ok: false, field: "discordChannelId" };
     changes.discordChannelId = channel;
   }
+  if ("discordInviteUrl" in body) {
+    const invite = normalizeDiscordInviteUrl(body.discordInviteUrl);
+    if (invite === undefined) return { ok: false, field: "discordInviteUrl" };
+    changes.discordInviteUrl = invite;
+  }
   return { ok: true, changes };
 }
 
@@ -138,6 +144,7 @@ export async function createProject(
     slug: parsed.changes.slug!,
     taskKeyPrefix: parsed.changes.taskKeyPrefix!,
     discordChannelId: parsed.changes.discordChannelId ?? null,
+    discordInviteUrl: parsed.changes.discordInviteUrl ?? null,
   };
   const result = await store.createProject(project);
   return result.status === "saved" ? { status: "created", project: result.project } : toTaken(result);

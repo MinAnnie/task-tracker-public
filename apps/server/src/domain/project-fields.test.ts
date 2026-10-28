@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   normalizeDiscordChannelId,
+  normalizeDiscordInviteUrl,
   normalizeProjectName,
   normalizeProjectSlug,
   normalizeRepositoryFullName,
@@ -90,6 +91,45 @@ describe("normalizeDiscordChannelId", () => {
       expect(normalizeDiscordChannelId(input)).toBeUndefined();
     },
   );
+});
+
+describe("normalizeDiscordInviteUrl", () => {
+  it.each([
+    ["https://discord.gg/abc123", "https://discord.gg/abc123"],
+    ["https://discord.com/invite/Abc-123", "https://discord.com/invite/Abc-123"],
+    ["https://www.discord.com/invite/abc", "https://www.discord.com/invite/abc"],
+    ["  https://discord.gg/abc  ", "https://discord.gg/abc"],
+    ["https://DISCORD.GG/abc", "https://DISCORD.GG/abc"],
+    [`https://discord.gg/${"a".repeat(181)}`, `https://discord.gg/${"a".repeat(181)}`],
+  ])("accepts %j as %j", (input, expected) => {
+    expect(normalizeDiscordInviteUrl(input)).toBe(expected);
+  });
+
+  it.each([[null], [""], ["   "]])("maps %j to null (no invite)", (input) => {
+    expect(normalizeDiscordInviteUrl(input)).toBeNull();
+  });
+
+  it.each([
+    ["http://discord.gg/abc"],
+    ["https://discord.gg/"],
+    ["https://discord.gg/abc/def"],
+    ["https://discord.com/abc"],
+    ["https://discord.com/invite/"],
+    ["https://evil.com/discord.gg/abc"],
+    ["https://discord.gg.evil.com/abc"],
+    ["https://user@discord.gg/abc"],
+    ["https://discord.gg:8443/abc"],
+    ["https://discord.gg/abc?x=1"],
+    ["https://discord.gg/abc#x"],
+    ["https://discord.gg/ab c"],
+    ["javascript:alert(1)"],
+    [`https://discord.gg/${"a".repeat(182)}`],
+    [undefined],
+    [42],
+    [{}],
+  ])("rejects %j", (input) => {
+    expect(normalizeDiscordInviteUrl(input)).toBeUndefined();
+  });
 });
 
 describe("normalizeRepositoryFullName", () => {

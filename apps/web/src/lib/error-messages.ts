@@ -33,6 +33,7 @@ const MESSAGES: Record<string, string> = {
   invalid_project_slug: "Use lowercase letters, numbers and single hyphens (up to 50).",
   invalid_task_key_prefix: "Use 1–10 letters or numbers, starting with a letter.",
   invalid_discord_channel_id: "A Discord channel ID is 17 to 20 digits.",
+  invalid_discord_invite_url: "Paste an invite link like https://discord.gg/abc123.",
   slug_taken: "Another project already uses that short key.",
   prefix_taken: "Another project already uses that prefix.",
   prefix_locked: "The prefix can’t change once the project has tasks.",

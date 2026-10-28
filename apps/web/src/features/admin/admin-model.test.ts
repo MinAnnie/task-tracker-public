@@ -54,16 +54,43 @@ describe("suggestTaskKeyPrefix", () => {
 });
 
 describe("validateProjectValues", () => {
-  const valid = { name: "Shop", slug: "shop", taskKeyPrefix: "rf", discordChannelId: "" };
+  const valid = { name: "Shop", slug: "shop", taskKeyPrefix: "rf", discordChannelId: "", discordInviteUrl: "" };
 
-  it("accepts valid values, the Discord channel being optional", () => {
+  it("accepts valid values, the Discord channel and invite being optional", () => {
     expect(validateProjectValues(valid)).toEqual({});
     expect(validateProjectValues({ ...valid, discordChannelId: "12345678901234567" })).toEqual({});
+    for (const invite of [
+      "https://discord.gg/abc",
+      " https://discord.com/invite/Abc-1 ",
+      "https://www.discord.com/invite/abc",
+    ]) {
+      expect(validateProjectValues({ ...valid, discordInviteUrl: invite })).toEqual({});
+    }
+  });
+
+  it("rejects an invite that is not a discord.gg or discord.com/invite link over https", () => {
+    for (const invite of [
+      "http://discord.gg/abc",
+      "https://discord.com/abc",
+      "https://example.com/invite/abc",
+      "https://discord.gg/abc?x=1",
+      `https://discord.gg/${"a".repeat(182)}`,
+    ]) {
+      expect(validateProjectValues({ ...valid, discordInviteUrl: invite })).toEqual({
+        discordInviteUrl: "Paste an invite link like https://discord.gg/abc123.",
+      });
+    }
   });
 
   it("explains each invalid field", () => {
     expect(
-      validateProjectValues({ name: " ", slug: "Not a slug", taskKeyPrefix: "1X", discordChannelId: "123" }),
+      validateProjectValues({
+        name: " ",
+        slug: "Not a slug",
+        taskKeyPrefix: "1X",
+        discordChannelId: "123",
+        discordInviteUrl: "",
+      }),
     ).toEqual({
       name: "Give the project a name.",
       slug: "Use lowercase letters, numbers and single hyphens (up to 50).",
@@ -74,13 +101,21 @@ describe("validateProjectValues", () => {
 });
 
 describe("toProjectInput", () => {
-  it("trims, uppercases the prefix and sends a blank Discord channel as null", () => {
-    expect(toProjectInput({ name: " Shop ", slug: " shop ", taskKeyPrefix: "rf", discordChannelId: " " })).toEqual({
+  it("trims, uppercases the prefix and sends a blank Discord channel and invite as null", () => {
+    expect(
+      toProjectInput({ name: " Shop ", slug: " shop ", taskKeyPrefix: "rf", discordChannelId: " ", discordInviteUrl: " " }),
+    ).toEqual({
       name: "Shop",
       slug: "shop",
       taskKeyPrefix: "RF",
       discordChannelId: null,
+      discordInviteUrl: null,
     });
+  });
+
+  it("trims the Discord invite", () => {
+    const values = { name: "Shop", slug: "shop", taskKeyPrefix: "RF", discordChannelId: "", discordInviteUrl: " https://discord.gg/abc " };
+    expect(toProjectInput(values).discordInviteUrl).toBe("https://discord.gg/abc");
   });
 });
 

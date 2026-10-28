@@ -53,7 +53,7 @@ export function ProjectsView(props: ProjectsViewProps) {
   );
 }
 
-const FIELD_ORDER: (keyof ProjectValues)[] = ["name", "slug", "taskKeyPrefix", "discordChannelId"];
+const FIELD_ORDER: (keyof ProjectValues)[] = ["name", "slug", "taskKeyPrefix", "discordChannelId", "discordInviteUrl"];
 
 function NewProjectForm({ onCreate, creating, createError, onDraftChange }: ProjectsViewProps) {
   const [values, setValues] = useState<ProjectValues>(EMPTY_PROJECT);
@@ -71,6 +71,7 @@ function NewProjectForm({ onCreate, creating, createError, onDraftChange }: Proj
     slug: useRef<HTMLInputElement>(null),
     taskKeyPrefix: useRef<HTMLInputElement>(null),
     discordChannelId: useRef<HTMLInputElement>(null),
+    discordInviteUrl: useRef<HTMLInputElement>(null),
   };
 
   const setName = (name: string) =>
@@ -152,6 +153,20 @@ function NewProjectForm({ onCreate, creating, createError, onDraftChange }: Proj
           onChange={(discordChannelId) => edit((current) => ({ ...current, discordChannelId }))}
           error={errors.discordChannelId}
           inputRef={refs.discordChannelId}
+        />
+        <TextField
+          label="Discord server invite"
+          optional
+          mono
+          type="url"
+          inputMode="url"
+          value={values.discordInviteUrl}
+          onChange={(discordInviteUrl) => edit((current) => ({ ...current, discordInviteUrl }))}
+          placeholder="https://discord.gg/abc123"
+          error={errors.discordInviteUrl}
+          inputRef={refs.discordInviteUrl}
+          autoCapitalize="off"
+          spellCheck={false}
         />
       </div>
       <div>

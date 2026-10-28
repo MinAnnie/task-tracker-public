@@ -72,7 +72,7 @@ const caller: ApiTokenCaller = {
   kind: "api_token",
   tokenId: 1,
   projectId: 3,
-  project: { id: 3, slug: "shop", name: "Shop", taskKeyPrefix: "RF" },
+  project: { id: 3, slug: "shop", name: "Shop", taskKeyPrefix: "RF", discordInviteUrl: "https://discord.gg/shop" },
 };
 
 describe("OpenAPI document", () => {

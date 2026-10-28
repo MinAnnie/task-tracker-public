@@ -35,6 +35,8 @@ export const projects = pgTable(
     /** Number the next created task key will use. */
     nextTaskNumber: integer("next_task_number").notNull().default(1),
     discordChannelId: text("discord_channel_id"),
+    /** Discord server invite (https://discord.gg/… or https://discord.com/invite/…). */
+    discordInviteUrl: text("discord_invite_url"),
     createdAt: createdAt(),
   },
   (t) => [

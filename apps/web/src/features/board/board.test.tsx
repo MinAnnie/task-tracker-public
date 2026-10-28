@@ -52,6 +52,20 @@ const cardKeys = (name: string) =>
     .map((el) => el.textContent);
 
 describe("Board", () => {
+  it("links to the project's Discord server in a new tab when it has an invite", async () => {
+    setup();
+    const link = await screen.findByRole("link", { name: "Discord" });
+    expect(link).toHaveAttribute("href", "https://discord.gg/acme");
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  });
+
+  it("shows no Discord link without an invite", async () => {
+    setup({ "GET /api/projects": [{ ...projects[0], discordInviteUrl: null }] });
+    expect(await screen.findByRole("heading", { level: 1, name: "Acme App" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Discord" })).not.toBeInTheDocument();
+  });
+
   it("shows the project name and one column per status, cards sorted by priority then key", async () => {
     setup();
     expect(await screen.findByRole("heading", { level: 1, name: "Acme App" })).toBeInTheDocument();

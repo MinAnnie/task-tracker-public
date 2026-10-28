@@ -11,6 +11,9 @@ const NAME_MAX = 100;
 /** The server's task key prefix rule (case-insensitive; stored uppercased). */
 const TASK_KEY_PREFIX = /^[A-Z][A-Z0-9]{0,9}$/i;
 const DISCORD_CHANNEL_ID = /^[0-9]{17,20}$/;
+/** The server's invite rule: https, discord.gg/<code> or (www.)discord.com/invite/<code>, up to 200 characters. */
+const DISCORD_INVITE_URL = /^https:\/\/(?:discord\.gg\/|(?:www\.)?discord\.com\/invite\/)[A-Za-z0-9-]+$/i;
+const DISCORD_INVITE_URL_MAX = 200;
 const REPOSITORY_NAME = /^[A-Za-z0-9._-]{1,100}$/;
 
 export const INVALID_LOGIN = "That isn’t a valid GitHub username.";
@@ -65,11 +68,21 @@ export interface ProjectValues {
   taskKeyPrefix: string;
   /** Blank means no channel. */
   discordChannelId: string;
+  /** Blank means no invite. */
+  discordInviteUrl: string;
 }
 
 export type ProjectErrors = Partial<Record<keyof ProjectValues, string>>;
 
-export const EMPTY_PROJECT: ProjectValues = { name: "", slug: "", taskKeyPrefix: "", discordChannelId: "" };
+export const EMPTY_PROJECT: ProjectValues = {
+  name: "",
+  slug: "",
+  taskKeyPrefix: "",
+  discordChannelId: "",
+  discordInviteUrl: "",
+};
+
+export const INVALID_DISCORD_INVITE = "Paste an invite link like https://discord.gg/abc123.";
 
 export function validateProjectValues(values: ProjectValues): ProjectErrors {
   const errors: ProjectErrors = {};
@@ -85,6 +98,10 @@ export function validateProjectValues(values: ProjectValues): ProjectErrors {
   const discord = values.discordChannelId.trim();
   if (discord !== "" && !DISCORD_CHANNEL_ID.test(discord)) {
     errors.discordChannelId = "A Discord channel ID is 17 to 20 digits.";
+  }
+  const invite = values.discordInviteUrl.trim();
+  if (invite !== "" && (invite.length > DISCORD_INVITE_URL_MAX || !DISCORD_INVITE_URL.test(invite))) {
+    errors.discordInviteUrl = INVALID_DISCORD_INVITE;
   }
   return errors;
 }
@@ -103,6 +120,7 @@ const FAILURE_FIELDS: Record<string, keyof ProjectValues> = {
   prefix_taken: "taskKeyPrefix",
   prefix_locked: "taskKeyPrefix",
   invalid_discord_channel_id: "discordChannelId",
+  invalid_discord_invite_url: "discordInviteUrl",
 };
 
 export function projectFailure(error: unknown): ProjectFailure {
@@ -116,14 +134,16 @@ export function fieldErrors(errors: ProjectErrors, failure: ProjectFailure | und
   return { ...errors, [failure.field]: failure.message };
 }
 
-/** The request body: trimmed, prefix uppercased, a blank Discord channel as `null`. */
+/** The request body: trimmed, prefix uppercased, a blank Discord channel or invite as `null`. */
 export function toProjectInput(values: ProjectValues): NewProjectInput {
   const discord = values.discordChannelId.trim();
+  const invite = values.discordInviteUrl.trim();
   return {
     name: values.name.trim(),
     slug: values.slug.trim(),
     taskKeyPrefix: values.taskKeyPrefix.trim().toUpperCase(),
     discordChannelId: discord === "" ? null : discord,
+    discordInviteUrl: invite === "" ? null : invite,
   };
 }
 

@@ -33,6 +33,8 @@ export interface Project {
   slug: string;
   name: string;
   taskKeyPrefix: string;
+  /** Invite to the project's Discord server, if set. */
+  discordInviteUrl: string | null;
 }
 
 export interface TaskAssignee {
@@ -134,6 +136,7 @@ export interface AdminProject {
   name: string;
   taskKeyPrefix: string;
   discordChannelId: string | null;
+  discordInviteUrl: string | null;
   /** ISO timestamp. */
   createdAt: string;
 }
@@ -166,6 +169,8 @@ export interface NewProjectInput {
   slug: string;
   taskKeyPrefix: string;
   discordChannelId: string | null;
+  /** `null` means no invite. */
+  discordInviteUrl: string | null;
 }
 
 export type ProjectChanges = Partial<NewProjectInput>;

@@ -75,6 +75,7 @@ describe("createDrizzleProjectStore (Postgres)", () => {
           name: "SHOP",
           taskKeyPrefix: "RF",
           discordChannelId: "123456789012345678",
+          discordInviteUrl: null,
           createdAt: expect.any(Date),
         },
       });
@@ -144,6 +145,21 @@ describe("createDrizzleProjectStore (Postgres)", () => {
         status: "saved",
         project: { ...shop, name: "Shop 2", discordChannelId: null },
       });
+    });
+
+    it("stores the Discord invite and exposes it on the project refs", async () => {
+      const shop = await seedProject("shop", "RF");
+      await seedProject("blog", "BL");
+      const invite = "https://discord.gg/shop";
+
+      expect(await store.updateProject(shop.id, { discordInviteUrl: invite })).toEqual({
+        status: "saved",
+        project: { ...shop, discordInviteUrl: invite },
+      });
+      expect(await store.listAllProjectRefs()).toEqual([
+        { id: expect.any(Number), slug: "blog", name: "BLOG", taskKeyPrefix: "BL", discordInviteUrl: null },
+        { id: shop.id, slug: "shop", name: "SHOP", taskKeyPrefix: "RF", discordInviteUrl: invite },
+      ]);
     });
 
     it("lists projects with counts, ordered by slug", async () => {
@@ -264,15 +280,15 @@ describe("createDrizzleProjectStore (Postgres)", () => {
       expect(
         await listVisibleProjects({ store, adminLogins }, { ...user, githubLogin: "OctoCat", role: "admin" }),
       ).toEqual([
-        { id: expect.any(Number), slug: "api", name: "API", taskKeyPrefix: "AP" },
-        { id: blog.id, slug: "blog", name: "BLOG", taskKeyPrefix: "BL" },
-        { id: shop.id, slug: "shop", name: "SHOP", taskKeyPrefix: "RF" },
+        { id: expect.any(Number), slug: "api", name: "API", taskKeyPrefix: "AP", discordInviteUrl: null },
+        { id: blog.id, slug: "blog", name: "BLOG", taskKeyPrefix: "BL", discordInviteUrl: null },
+        { id: shop.id, slug: "shop", name: "SHOP", taskKeyPrefix: "RF", discordInviteUrl: null },
       ]);
       expect(
         await listVisibleProjects({ store, adminLogins }, { ...user, githubLogin: "Mona", role: "member" }),
       ).toEqual([
-        { id: blog.id, slug: "blog", name: "BLOG", taskKeyPrefix: "BL" },
-        { id: shop.id, slug: "shop", name: "SHOP", taskKeyPrefix: "RF" },
+        { id: blog.id, slug: "blog", name: "BLOG", taskKeyPrefix: "BL", discordInviteUrl: null },
+        { id: shop.id, slug: "shop", name: "SHOP", taskKeyPrefix: "RF", discordInviteUrl: null },
       ]);
       expect(
         await listVisibleProjects({ store, adminLogins }, { ...user, githubLogin: "bob", role: "member" }),

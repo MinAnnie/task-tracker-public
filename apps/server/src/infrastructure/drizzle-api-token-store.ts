@@ -10,6 +10,7 @@ const projectRefColumns = {
   slug: projects.slug,
   name: projects.name,
   taskKeyPrefix: projects.taskKeyPrefix,
+  discordInviteUrl: projects.discordInviteUrl,
 };
 
 const recordColumns = {

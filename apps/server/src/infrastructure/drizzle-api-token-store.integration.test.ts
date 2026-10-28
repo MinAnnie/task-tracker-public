@@ -110,7 +110,7 @@ describe("createDrizzleApiTokenStore (Postgres)", () => {
       kind: "api_token",
       tokenId: expect.any(Number),
       projectId: shopId,
-      project: { id: shopId, slug: "shop", name: "Shop", taskKeyPrefix: "RF" },
+      project: { id: shopId, slug: "shop", name: "Shop", taskKeyPrefix: "RF", discordInviteUrl: null },
     });
     clock = new Date(NOW.getTime() + 30_000);
     await authenticateApiToken(deps, TOKEN);
