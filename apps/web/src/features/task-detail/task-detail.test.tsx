@@ -577,6 +577,57 @@ describe("Task detail", () => {
   });
 });
 
+describe("Description", () => {
+  const description = () => screen.getByRole("region", { name: "Description" });
+
+  it("renders the description as Markdown", async () => {
+    setup(
+      taskDetail({
+        description: [
+          "## What it is",
+          "A **public** page at `/c/<id>`.",
+          "",
+          "- First item",
+          "- [x] Done item",
+          "",
+          "| Code | Meaning |",
+          "| --- | --- |",
+          "| 404 | not_found |",
+          "",
+          "[Docs](https://example.com/docs)",
+        ].join("\n"),
+      }),
+    );
+
+    await screen.findByRole("heading", { level: 2, name: "What it is" });
+    const region = description();
+    expect(within(region).getByText("public").tagName).toBe("STRONG");
+    expect(within(region).getByText("/c/<id>").tagName).toBe("CODE");
+    expect(within(region).getAllByRole("listitem")).toHaveLength(2);
+    expect(within(region).getByRole("checkbox")).toBeChecked();
+    expect(within(region).getByRole("table")).toHaveTextContent("not_found");
+    const link = within(region).getByRole("link", { name: "Docs" });
+    expect(link).toHaveAttribute("href", "https://example.com/docs");
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+    expect(region).not.toHaveTextContent("##");
+    expect(region).not.toHaveTextContent("**");
+  });
+
+  it("never renders raw HTML or script links from the description", async () => {
+    setup(
+      taskDetail({
+        description: '<img src="x" onerror="alert(1)"> <script>alert(2)</script>\n\n[click](javascript:alert(3))',
+      }),
+    );
+
+    const link = await within(await screen.findByRole("region", { name: "Description" })).findByText("click");
+    const region = description();
+    expect(region.querySelector("img, script")).toBeNull();
+    expect(link.getAttribute("href") ?? "").not.toMatch(/javascript:/i);
+  });
+});
+
 describe("Copying the task", () => {
   const description = () => screen.getByRole("region", { name: "Description" });
 
