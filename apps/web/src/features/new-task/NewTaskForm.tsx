@@ -4,6 +4,7 @@ import { PRIORITY_LABELS } from "../../lib/task-labels.ts";
 import { Alert } from "../../ui/Alert.tsx";
 import buttons from "../../ui/Button.module.css";
 import { CloseIcon } from "../../ui/icons.tsx";
+import { MarkdownEditor } from "../../ui/MarkdownEditor.tsx";
 import { PriorityIcon } from "../../ui/PriorityIcon.tsx";
 import type { DependencyOption } from "../task-detail/dependency-input.ts";
 import { DependsOnField } from "./DependsOnField.tsx";
@@ -106,18 +107,18 @@ export function NewTaskForm(props: NewTaskFormProps) {
 
         <PriorityPicker value={values.priority} onChange={(priority) => set("priority", priority)} />
 
-        <label className={styles.field}>
-          <span>
+        <div className={styles.field}>
+          <label htmlFor="new-task-description">
             Description <span className={styles.optional}>Optional</span>
-          </span>
-          <textarea
-            className={styles.textarea}
+          </label>
+          <MarkdownEditor
+            id="new-task-description"
             rows={4}
             value={values.description}
-            onChange={(event) => set("description", event.target.value)}
+            onChange={(description) => set("description", description)}
             placeholder="Context, acceptance criteria, links…"
           />
-        </label>
+        </div>
 
         <div className={styles.pair}>
           <label className={styles.field}>

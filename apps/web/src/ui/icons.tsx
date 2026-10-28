@@ -91,3 +91,68 @@ export const SignInIcon = (p: IconProps) => (
     <path d="M15 12H3" />
   </Icon>
 );
+
+/* Formatting toolbar icons (Lucide-style strokes). */
+
+export const HeadingIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M6 4v16M18 4v16M6 12h12" />
+  </Icon>
+);
+
+export const BoldIcon = (p: IconProps) => (
+  <Icon strokeWidth={2.5} {...p}>
+    <path d="M7 4h6a4 4 0 0 1 0 8H7zM7 12h7a4 4 0 0 1 0 8H7z" />
+  </Icon>
+);
+
+export const ItalicIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M19 4h-9M14 20H5M15 4 9 20" />
+  </Icon>
+);
+
+export const InlineCodeIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="m16 18 6-6-6-6M8 6l-6 6 6 6" />
+  </Icon>
+);
+
+export const LinkIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" />
+    <path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" />
+  </Icon>
+);
+
+export const BulletListIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01" />
+  </Icon>
+);
+
+export const NumberedListIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M10 6h10M10 12h10M10 18h10M4 4h1v4M4 8h2M6 18H4c0-1 2-2 2-3s-1-1.5-2-1" />
+  </Icon>
+);
+
+export const TaskListIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="3" y="4" width="6" height="6" rx="1" />
+    <path d="m3.5 17 2 2 4-4M13 7h8M13 17h8" />
+  </Icon>
+);
+
+export const QuoteIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 5v14M9 7h11M9 12h11M9 17h7" />
+  </Icon>
+);
+
+export const CodeBlockIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <path d="m10 10-2 2 2 2M14 10l2 2-2 2" />
+  </Icon>
+);

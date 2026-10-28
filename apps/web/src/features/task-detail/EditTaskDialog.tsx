@@ -4,6 +4,7 @@ import { Alert } from "../../ui/Alert.tsx";
 import buttons from "../../ui/Button.module.css";
 import { Dialog } from "../../ui/Dialog.tsx";
 import { CloseIcon } from "../../ui/icons.tsx";
+import { MarkdownEditor } from "../../ui/MarkdownEditor.tsx";
 import {
   EDIT_TASK_FIELDS,
   editTaskChanges,
@@ -115,7 +116,12 @@ export function EditTaskDialog({ task, stages, saving, error, onSave, onDraftCha
             <label htmlFor={`${id}-description`}>
               Description <span className={styles.optional}>Optional</span>
             </label>
-            <textarea {...fieldProps("description")} ref={refs.description} rows={8} className={styles.textarea} />
+            <MarkdownEditor
+              {...fieldProps("description")}
+              onChange={set("description")}
+              ref={refs.description}
+              rows={8}
+            />
             {fieldError("description")}
           </div>
 

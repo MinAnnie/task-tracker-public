@@ -1,8 +1,7 @@
 import { useRef } from "react";
-import Markdown, { type Components } from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { useCopyFeedback } from "../../lib/clipboard.ts";
 import buttons from "../../ui/Button.module.css";
+import { MarkdownContent } from "../../ui/MarkdownContent.tsx";
 import styles from "./TaskDetail.module.css";
 
 export interface DescriptionSectionProps {
@@ -10,11 +9,6 @@ export interface DescriptionSectionProps {
   /** The markdown brief "Copy for AI" puts on the clipboard. */
   aiPrompt: string;
 }
-
-/** Links in a description leave the app in a new tab. */
-const MARKDOWN_COMPONENTS: Components = {
-  a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" />,
-};
 
 /** Selects the element's text so it can be copied by hand. */
 function selectText(element: HTMLElement | null) {
@@ -66,12 +60,7 @@ export function DescriptionSection({ description, aiPrompt }: DescriptionSection
         </div>
       </div>
       {description ? (
-        // Markdown without raw HTML; react-markdown also drops unsafe link protocols.
-        <div ref={textRef} className={styles.description}>
-          <Markdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
-            {description}
-          </Markdown>
-        </div>
+        <MarkdownContent ref={textRef}>{description}</MarkdownContent>
       ) : (
         <p className={styles.empty}>No description.</p>
       )}

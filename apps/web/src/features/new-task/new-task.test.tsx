@@ -162,6 +162,31 @@ describe("New task", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
+  it("formats the description with the toolbar, sending it as Markdown", async () => {
+    const { api, user } = setup();
+    const dialog = await screen.findByRole("dialog", { name: "New task" });
+    await user.type(within(dialog).getByRole("textbox", { name: "Title" }), "Ship it");
+    const description = within(dialog).getByRole("textbox", { name: /Description/ });
+    await user.type(description, "Check the logs");
+    const toolbar = within(dialog).getByRole("toolbar", { name: "Formatting" });
+    await user.click(within(toolbar).getByRole("button", { name: "Bulleted list" }));
+    (description as HTMLTextAreaElement).setSelectionRange(8, 11);
+    await user.click(within(toolbar).getByRole("button", { name: "Bold" }));
+
+    await user.click(within(dialog).getByRole("tab", { name: "Preview" }));
+    const preview = within(dialog).getByRole("tabpanel", { name: "Preview" });
+    expect(within(preview).getByRole("listitem")).toHaveTextContent("Check the logs");
+    expect(within(preview).getByText("the").tagName).toBe("STRONG");
+
+    await user.click(within(dialog).getByRole("button", { name: "Create task" }));
+    await waitFor(() =>
+      expect(api.calls).toContainEqual({
+        route: "POST /api/projects/app/tasks",
+        body: { title: "Ship it", priority: "medium", description: "- Check **the** logs" },
+      }),
+    );
+  });
+
   describe("Depends on", () => {
     const boardTasks = [
       boardTask({ key: "RF-10", title: "Login page" }),

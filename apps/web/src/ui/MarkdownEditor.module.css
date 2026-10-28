@@ -1,0 +1,165 @@
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  font-weight: 400;
+}
+
+/* Looks like the other form controls; the textarea inside has no border of its own. */
+.frame {
+  border: 1px solid var(--color-control-line);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.frame:has(.textarea[aria-invalid="true"]) {
+  border: 2px solid var(--color-danger);
+}
+
+.frame:has(.textarea:focus-visible) {
+  outline: var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 4px;
+  border-bottom: 1px solid var(--color-line);
+  background: var(--color-surface-muted);
+}
+
+.tabs {
+  display: flex;
+  flex: none;
+  gap: 2px;
+}
+
+.tab {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+
+.tab:hover {
+  color: var(--color-ink);
+}
+
+.tab[aria-selected="true"] {
+  background: var(--color-surface);
+  color: var(--color-ink);
+  box-shadow: 0 0 0 1px var(--color-line);
+}
+
+/* On narrow screens the buttons scroll sideways instead of pushing the field wider. */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  margin-left: auto;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.tool {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-ink-subtle);
+  cursor: pointer;
+}
+
+.tool:hover:not(:disabled) {
+  background: var(--color-hover);
+  color: var(--color-ink);
+}
+
+.tool:disabled {
+  color: var(--color-disabled-fg);
+  cursor: not-allowed;
+}
+
+/* Inset so the ring isn't clipped by the scrolling toolbar or the frame. */
+.tab:focus-visible,
+.tool:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.separator {
+  flex: none;
+  align-self: stretch;
+  width: 1px;
+  margin: 6px 3px;
+  background: var(--color-line);
+}
+
+@media (pointer: coarse) {
+  .tab {
+    min-height: 40px;
+  }
+
+  .tool {
+    width: 40px;
+    height: 40px;
+  }
+}
+
+.textarea {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 40px;
+  padding: 10px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-ink);
+  resize: vertical;
+}
+
+.textarea:focus-visible {
+  outline: none;
+}
+
+.preview {
+  box-sizing: border-box;
+  padding: 10px 12px;
+  max-height: 60vh;
+  overflow: auto;
+}
+
+.preview .previewContent {
+  font-size: 14px;
+}
+
+.empty {
+  margin: 0;
+  font-size: 14px;
+  color: var(--color-muted);
+}
+
+.hint {
+  font-size: 12px;
+  color: var(--color-muted);
+}

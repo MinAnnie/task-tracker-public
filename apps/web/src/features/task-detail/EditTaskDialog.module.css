@@ -63,8 +63,7 @@
   color: var(--color-muted);
 }
 
-.input,
-.textarea {
+.input {
   font: inherit;
   font-weight: 400;
   font-size: 14px;
@@ -76,13 +75,7 @@
   color: var(--color-ink);
 }
 
-.textarea {
-  padding: 10px;
-  resize: vertical;
-}
-
-.input[aria-invalid="true"],
-.textarea[aria-invalid="true"] {
+.input[aria-invalid="true"] {
   border: 2px solid var(--color-danger);
 }
 

@@ -66,8 +66,7 @@
   color: var(--color-muted);
 }
 
-.input,
-.textarea {
+.input {
   font-weight: 400;
   font-size: 14px;
   min-height: 40px;
@@ -85,11 +84,6 @@
 
 .input[aria-invalid="true"] {
   border: 2px solid var(--color-danger);
-}
-
-.textarea {
-  padding: 10px;
-  resize: vertical;
 }
 
 .error {
