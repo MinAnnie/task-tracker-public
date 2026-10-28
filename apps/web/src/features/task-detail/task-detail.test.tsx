@@ -699,3 +699,49 @@ describe("Copying the task", () => {
     );
   });
 });
+
+describe("Back to the board", () => {
+  function setupBoardAndTask(route: string) {
+    fakeApi({
+      "GET /auth/me": me,
+      "GET /api/projects": projects,
+      "GET /api/projects/app/tasks": [
+        boardTask({ key: "RF-13", title: rf13.title, priority: "high" }),
+        boardTask({ key: "RF-14", title: "Discord bot: post merged PRs", priority: "high" }),
+      ],
+      "GET /api/projects/app/participants": [],
+      "GET /api/projects/app/stages": [],
+      [`GET ${TASK}`]: taskDetail({ dependsOn: [rf13] }),
+      "GET /api/projects/app/tasks/RF-13": taskDetail({ key: "RF-13", title: rf13.title }),
+    });
+    renderRoutes(
+      <Routes>
+        <Route path="/projects/:slug" element={<BoardContainer />} />
+        <Route path="/projects/:slug/tasks/:key" element={<TaskDetailContainer />} />
+      </Routes>,
+      route,
+    );
+    return userEvent.setup();
+  }
+
+  it("keeps the board's filters after opening tasks", async () => {
+    const user = setupBoardAndTask("/projects/app?priority=high&sort=newest");
+
+    await user.click(await screen.findByRole("link", { name: "Discord bot: post merged PRs" }));
+    await user.click(await screen.findByRole("link", { name: /RF-13/ }));
+    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/projects/app/tasks/RF-13"));
+    await user.click(await screen.findByRole("link", { name: /board$/ }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("location")).toHaveTextContent(/^\/projects\/app\?priority=high&sort=newest$/),
+    );
+  });
+
+  it("goes to the unfiltered board when the task was opened directly", async () => {
+    const user = setupBoardAndTask("/projects/app/tasks/RF-14");
+
+    await user.click(await screen.findByRole("link", { name: /board$/ }));
+
+    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent(/^\/projects\/app$/));
+  });
+});

@@ -3,12 +3,20 @@ import { Outlet, useLocation, useNavigate, useParams } from "react-router";
 import { useBoard, useCurrentUser, useParticipants, useProjects, useStages, useTakeTask } from "../../api/queries.ts";
 import type { TaskStatus } from "../../api/types.ts";
 import { errorMessage } from "../../lib/error-messages.ts";
+import { rememberBoardView } from "../../lib/board-view.ts";
 import { rememberLastProject } from "../../lib/last-project.ts";
 import { paths } from "../../lib/paths.ts";
 import { Alert } from "../../ui/Alert.tsx";
 import { StatusMessage } from "../../ui/StatusMessage.tsx";
 import { isProjectUnavailable, ProjectUnavailable } from "../projects/ProjectUnavailable.tsx";
-import { assigneeOptions, clearFilters, filterTasks, groupByStatus, stageOptions } from "./board-model.ts";
+import {
+  assigneeOptions,
+  clearFilters,
+  filterTasks,
+  groupByStatus,
+  stageOptions,
+  writeBoardFilters,
+} from "./board-model.ts";
 import { BoardView } from "./BoardView.tsx";
 import { useBoardFilters } from "./use-board-filters.ts";
 
@@ -43,6 +51,12 @@ export function BoardContainer() {
   useEffect(() => {
     if (board.isSuccess) rememberLastProject(slug);
   }, [board.isSuccess, slug]);
+
+  // Going back from a task returns to this view (only the filters, never other parameters).
+  useEffect(() => {
+    const view = writeBoardFilters(filters, new URLSearchParams()).toString();
+    rememberBoardView(slug, view && `?${view}`);
+  }, [filters, slug]);
 
   // Announced once: the history entry forgets it, so going back or reloading stays quiet.
   const deletedTask = (location.state as { deletedTask?: unknown } | null)?.deletedTask;

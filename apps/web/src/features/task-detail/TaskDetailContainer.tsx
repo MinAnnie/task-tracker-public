@@ -14,6 +14,7 @@ import {
   useUpdateTask,
 } from "../../api/queries.ts";
 import { errorMessage } from "../../lib/error-messages.ts";
+import { readBoardView } from "../../lib/board-view.ts";
 import { paths } from "../../lib/paths.ts";
 import { Alert } from "../../ui/Alert.tsx";
 import { StatusMessage } from "../../ui/StatusMessage.tsx";
@@ -61,7 +62,7 @@ export function TaskDetailContainer() {
 
   return (
     <TaskDetailView
-      boardHref={paths.board(slug)}
+      boardHref={paths.board(slug) + readBoardView(slug)}
       taskHref={(other) => paths.task(slug, other)}
       aiPrompt={buildTaskPrompt(detail, { slug, name: projectName }, window.location.origin)}
       assignment={{
