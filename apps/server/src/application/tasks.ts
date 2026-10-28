@@ -46,7 +46,15 @@ export interface TasksDeps {
 }
 
 /** Request field that failed validation; `body` means the body is not a JSON object. */
-export type TaskField = "body" | "title" | "description" | "priority" | "stage" | "status" | "dependsOnKey";
+export type TaskField =
+  | "body"
+  | "title"
+  | "description"
+  | "priority"
+  | "stage"
+  | "status"
+  | "dependsOnKey"
+  | "dependsOnKeys";
 
 export interface TaskAssigneeView {
   login: string;
@@ -128,6 +136,8 @@ type Invalid = { status: "invalid"; field: TaskField };
 type InvalidAssignee = { status: "invalid_assignee" };
 /** The stage is well-formed but not one of the project's stages. */
 type InvalidStage = { status: "invalid_stage" };
+/** Dependency keys that name no task of the project, as sent. */
+type InvalidDependency = { status: "invalid_dependency"; unknownKeys: readonly string[] };
 type DependenciesPending = { status: "dependencies_pending"; pendingDependencies: readonly string[] };
 type Found = { status: "ok"; task: TaskDetail };
 
@@ -144,7 +154,9 @@ export type CreateTaskResult =
   | Forbidden
   | Invalid
   | InvalidStage
-  | InvalidAssignee;
+  | InvalidDependency
+  | InvalidAssignee
+  | DependenciesPending;
 export type TakeTaskResult =
   | Found
   | ProjectNotFound
@@ -185,6 +197,9 @@ export type RemoveTaskDependencyResult =
   | TaskNotFound
   | { status: "dependency_not_found" };
 export type DeleteTaskResult = { status: "deleted" } | ProjectNotFound | Forbidden | TaskNotFound;
+
+/** Most dependencies a task can be created with. */
+const MAX_CREATE_DEPENDENCIES = 50;
 
 /** Statuses that mean work on the task started; they require every dependency to be done. */
 const STARTED_STATUSES: readonly TaskStatus[] = ["in_progress", "in_review", "done"];
@@ -449,10 +464,29 @@ export async function getTask(
   return { status: "ok", task: await describeTask(store, task, !isApiTokenViewer(user)) };
 }
 
+/** Untrusted `dependsOnKeys`: up to 50 strings, deduplicated case-insensitively (first spelling kept). */
+function parseDependsOnKeys(value: unknown): string[] | undefined {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > MAX_CREATE_DEPENDENCIES) return undefined;
+  if (!value.every((key): key is string => typeof key === "string")) return undefined;
+  const seen = new Set<string>();
+  return value.filter((key) => {
+    const folded = key.toLowerCase();
+    if (seen.has(folded)) return false;
+    seen.add(folded);
+    return true;
+  });
+}
+
 /**
  * Creates a task from an untrusted request body. Its key is `<prefix>-<n>`, numbered
  * while the project row is locked, so concurrent creations (and prefix changes)
  * serialize and generated keys never collide, even with imported ones.
+ *
+ * `dependsOnKeys` lists existing tasks of the project the new task depends on; every
+ * key is checked before anything is written, and the edges are added in the same
+ * transaction (a new task cannot close a cycle). Like assigning an existing task, an
+ * assignee is refused while any of those dependencies is pending.
  */
 export async function createTask(
   deps: TasksDeps,
@@ -469,6 +503,8 @@ export async function createTask(
   if (priority === undefined) return { status: "invalid", field: "priority" };
   const requestedStage = body.stage === undefined ? null : normalizeTaskStage(body.stage);
   if (requestedStage === undefined) return { status: "invalid", field: "stage" };
+  const dependsOnKeys = parseDependsOnKeys(body.dependsOnKeys);
+  if (dependsOnKeys === undefined) return { status: "invalid", field: "dependsOnKeys" };
   const assigneeLogin = body.assigneeLogin ?? null;
   const { adminLogins } = deps;
 
@@ -479,17 +515,28 @@ export async function createTask(
     const stage = await resolveStage(tx, project.id, requestedStage);
     if (stage === undefined) return { status: "invalid_stage" };
 
+    const dependencies: TaskRecord[] = [];
+    const unknownKeys: string[] = [];
+    for (const dependsOnKey of dependsOnKeys) {
+      const dependency = await tx.findTaskByKey(project.id, dependsOnKey);
+      if (dependency === undefined) unknownKeys.push(dependsOnKey);
+      else if (!dependencies.some((d) => d.id === dependency.id)) dependencies.push(dependency);
+    }
+    if (unknownKeys.length > 0) return { status: "invalid_dependency", unknownKeys };
+
     let assignee: TaskUserRecord | null = null;
     if (assigneeLogin !== null) {
       const resolved = await resolveAssignee({ store: tx, adminLogins }, project.id, assigneeLogin);
       if (resolved === undefined) return { status: "invalid_assignee" };
+      const pending = pendingDependencies([...dependencies].sort((a, b) => compareTaskKeys(a.key, b.key)));
+      if (pending.length > 0) return { status: "dependencies_pending", pendingDependencies: pending };
       assignee = resolved;
     }
 
     const keys = await tx.listProjectTaskKeys(project.id);
     const taskNumber = nextTaskKeyNumber(project.taskKeyPrefix, project.nextTaskNumber, keys);
     const key = formatTaskKey(project.taskKeyPrefix, taskNumber);
-    await tx.insertTask({
+    const { id } = await tx.insertTask({
       projectId: project.id,
       key,
       title,
@@ -499,6 +546,7 @@ export async function createTask(
       status: assignee === null ? "todo" : "in_progress",
       assigneeId: assignee?.id ?? null,
     });
+    for (const dependency of dependencies) await tx.addDependency(id, dependency.id);
     await tx.setNextTaskNumber(project.id, taskNumber + 1);
     const target = notificationTarget(project);
     if (target !== undefined) {

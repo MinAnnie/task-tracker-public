@@ -9,6 +9,14 @@ export type DependencyInput = { ok: true; key: string } | { ok: false; reason: "
 /** `RF-14`, `AUTH-08B`: a prefix, a hyphen, digits and an optional letter. */
 const KEY_SHAPE = /^[a-z][a-z0-9]*-\d+[a-z]?$/i;
 
+/** Why the typed dependency could not be resolved, with how to fix it. */
+export function dependencyInputError(reason: "empty" | "no_match" | "ambiguous", typed: string, keyExample: string): string {
+  const fix = `Pick one from the suggestions or enter its key, like ${keyExample}.`;
+  if (reason === "empty") return `Enter a task key, like ${keyExample}.`;
+  if (reason === "ambiguous") return `Several task titles contain “${typed}”. ${fix}`;
+  return `No task title contains “${typed}”. ${fix}`;
+}
+
 /**
  * Turns what was typed in the dependency field into a task key. The field invites a
  * search, so besides a key it accepts a suggestion's label ("RF-38 Mapa…") or part of

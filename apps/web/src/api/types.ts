@@ -112,6 +112,8 @@ export interface NewTaskInput {
   priority: TaskPriority;
   stage?: string;
   assigneeLogin?: string;
+  /** Keys of existing tasks of the project the new task depends on. */
+  dependsOnKeys?: string[];
 }
 
 export interface TaskChanges {

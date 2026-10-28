@@ -4,7 +4,7 @@ import type { TaskLink } from "../../api/types.ts";
 import { Alert } from "../../ui/Alert.tsx";
 import buttons from "../../ui/Button.module.css";
 import { StatusChip } from "../../ui/StatusChip.tsx";
-import { resolveDependencyInput } from "./dependency-input.ts";
+import { dependencyInputError, resolveDependencyInput } from "./dependency-input.ts";
 import styles from "./TaskDetail.module.css";
 
 /** Where focus goes once a removal settles: another dependency's Remove button, or the add field. */
@@ -24,13 +24,6 @@ export interface DependenciesSectionProps {
   removingKey?: string;
   adding: boolean;
   error?: string;
-}
-
-function inputError(reason: "empty" | "no_match" | "ambiguous", typed: string, keyExample: string): string {
-  const fix = `Pick one from the suggestions or enter its key, like ${keyExample}.`;
-  if (reason === "empty") return `Enter a task key, like ${keyExample}.`;
-  if (reason === "ambiguous") return `Several task titles contain “${typed}”. ${fix}`;
-  return `No task title contains “${typed}”. ${fix}`;
 }
 
 export function DependenciesSection(props: DependenciesSectionProps) {
@@ -64,7 +57,7 @@ export function DependenciesSection(props: DependenciesSectionProps) {
     event.preventDefault();
     const input = resolveDependencyInput(draft, props.suggestions);
     if (!input.ok) {
-      setLocalError(inputError(input.reason, draft.trim(), props.keyExample));
+      setLocalError(dependencyInputError(input.reason, draft.trim(), props.keyExample));
       return;
     }
     setLocalError(undefined);

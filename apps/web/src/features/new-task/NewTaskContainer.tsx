@@ -39,6 +39,8 @@ export function NewTaskContainer() {
         nextKey={prefix ? nextTaskKey(prefix, (board.data ?? []).map((t) => t.key)) : "…"}
         assignees={assigneeOptions(myLogin, participants)}
         stages={stages.map((stage) => stage.name)}
+        tasks={(board.data ?? []).map(({ key, title }) => ({ key, title }))}
+        keyExample={`${prefix ?? "ABC"}-7`}
         submitting={create.isPending}
         error={create.isError ? errorMessage(create.error) : undefined}
         lastCreatedKey={lastCreatedKey}

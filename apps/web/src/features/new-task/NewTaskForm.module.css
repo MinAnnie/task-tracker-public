@@ -257,3 +257,56 @@
     flex: 1;
   }
 }
+
+/* Depends on: chosen tasks as removable chips above the search field */
+.chips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  font-weight: 400;
+  font-size: 13px;
+  padding: 2px 2px 2px 10px;
+  border: 1px solid var(--color-line);
+  border-radius: 999px;
+  background: var(--color-surface-muted);
+  overflow-wrap: anywhere;
+}
+
+.chipRemove {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-muted);
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.chipRemove:hover {
+  background: var(--color-hover);
+}
+
+.addRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.addRow .input {
+  flex: 1 1 200px;
+  min-width: 0;
+}

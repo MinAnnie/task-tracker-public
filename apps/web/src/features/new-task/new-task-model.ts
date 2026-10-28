@@ -10,9 +10,18 @@ export interface NewTaskValues {
   assignee: string;
   /** One of the project's stages; empty for none. */
   stage: string;
+  /** Keys of the tasks it will depend on, in the order chosen. */
+  dependsOn: string[];
 }
 
-export const EMPTY_VALUES: NewTaskValues = { title: "", priority: "medium", description: "", assignee: "", stage: "" };
+export const EMPTY_VALUES: NewTaskValues = {
+  title: "",
+  priority: "medium",
+  description: "",
+  assignee: "",
+  stage: "",
+  dependsOn: [],
+};
 
 export const PRIORITY_HINTS: Record<TaskPriority, string> = {
   urgent: "Urgent: drop what you’re doing. Shows first in every column.",
@@ -34,6 +43,7 @@ export function toNewTaskInput(values: NewTaskValues): NewTaskInput {
   if (values.description.trim() !== "") input.description = values.description;
   if (values.stage.trim() !== "") input.stage = values.stage.trim();
   if (values.assignee !== "") input.assigneeLogin = values.assignee;
+  if (values.dependsOn.length > 0) input.dependsOnKeys = values.dependsOn;
   return input;
 }
 

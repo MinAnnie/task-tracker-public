@@ -162,6 +162,75 @@ describe("New task", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
+  describe("Depends on", () => {
+    const boardTasks = [
+      boardTask({ key: "RF-10", title: "Login page" }),
+      boardTask({ key: "RF-11", title: "Login API" }),
+      boardTask({ key: "RF-12", title: "Export tasks to CSV" }),
+    ];
+    const dependsOnField = (dialog: HTMLElement) => within(dialog).getByRole("combobox", { name: /^Depends on/ });
+    const chips = (dialog: HTMLElement) =>
+      within(within(dialog).getByRole("list", { name: "Chosen dependencies" }))
+        .queryAllByRole("listitem")
+        .map((item) => item.textContent);
+
+    it("adds dependencies by key or title as removable chips and sends their keys", async () => {
+      const { api, user } = setup({ "GET /api/projects/app/tasks": boardTasks });
+      const dialog = await screen.findByRole("dialog", { name: "New task" });
+      await user.type(within(dialog).getByRole("textbox", { name: "Title" }), "Ship it");
+
+      await user.type(dependsOnField(dialog), "rf-12{Enter}");
+      await user.type(dependsOnField(dialog), "login api");
+      await user.click(within(dialog).getByRole("button", { name: "Add dependency" }));
+      await user.type(dependsOnField(dialog), "RF-10{Enter}");
+      expect(chips(dialog)).toEqual([
+        expect.stringContaining("RF-12 Export tasks to CSV"),
+        expect.stringContaining("RF-11 Login API"),
+        expect.stringContaining("RF-10 Login page"),
+      ]);
+      expect(dependsOnField(dialog)).toHaveValue("");
+      expect(api.calls.map((c) => c.route)).not.toContain("POST /api/projects/app/tasks");
+
+      await user.click(within(dialog).getByRole("button", { name: "Remove dependency on RF-11" }));
+      await user.type(dependsOnField(dialog), "RF-12{Enter}");
+      expect(chips(dialog)).toHaveLength(2);
+
+      await user.click(within(dialog).getByRole("button", { name: "Create task" }));
+      await waitFor(() =>
+        expect(api.calls).toContainEqual({
+          route: "POST /api/projects/app/tasks",
+          body: { title: "Ship it", priority: "medium", dependsOnKeys: ["RF-12", "RF-10"] },
+        }),
+      );
+    });
+
+    it("explains text that matches no task or several", async () => {
+      const { user } = setup({ "GET /api/projects/app/tasks": boardTasks });
+      const dialog = await screen.findByRole("dialog", { name: "New task" });
+      await waitFor(() => expect(dialog).toHaveTextContent("will be created as RF-13"));
+      await user.type(dependsOnField(dialog), "login{Enter}");
+      expect(dependsOnField(dialog)).toHaveAccessibleDescription(
+        "Several task titles contain “login”. Pick one from the suggestions or enter its key, like RF-7.",
+      );
+      await user.clear(dependsOnField(dialog));
+      await user.type(dependsOnField(dialog), "nothing{Enter}");
+      expect(dependsOnField(dialog)).toHaveAccessibleDescription(
+        "No task title contains “nothing”. Pick one from the suggestions or enter its key, like RF-7.",
+      );
+    });
+
+    it("names the dependencies the server doesn't know", async () => {
+      const { user } = setup({
+        "POST /api/projects/app/tasks": reply(400, { error: "invalid_dependency", unknownKeys: ["RF-99"] }),
+      });
+      const dialog = await screen.findByRole("dialog", { name: "New task" });
+      await user.type(within(dialog).getByRole("textbox", { name: "Title" }), "Ship it");
+      await user.type(dependsOnField(dialog), "RF-99{Enter}");
+      await user.click(within(dialog).getByRole("button", { name: "Create task" }));
+      expect(await within(dialog).findByText("These tasks don’t exist in this project: RF-99.")).toBeInTheDocument();
+    });
+  });
+
   it("offers Unassigned, Me, then the project's other participants", async () => {
     const { api, user } = setup();
     const dialog = await screen.findByRole("dialog", { name: "New task" });

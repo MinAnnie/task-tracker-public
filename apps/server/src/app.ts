@@ -223,6 +223,7 @@ const INVALID_TASK_FIELD_ERRORS: Record<TaskField, string> = {
   stage: "invalid_task_stage",
   status: "invalid_task_status",
   dependsOnKey: "invalid_task_key",
+  dependsOnKeys: "invalid_dependency",
 };
 
 const TASK_FAILURE_STATUS = {
@@ -239,7 +240,10 @@ const TASK_FAILURE_STATUS = {
   task_not_assigned: 409,
   dependency_exists: 409,
   dependency_cycle: 409,
-} as const satisfies Record<Exclude<TaskFailure["status"], "invalid" | "dependencies_pending">, number>;
+} as const satisfies Record<
+  Exclude<TaskFailure["status"], "invalid" | "dependencies_pending" | "invalid_dependency">,
+  number
+>;
 
 /** Renders a failed task use case as its error response. */
 function taskFailure(c: Context, failure: TaskFailure) {
@@ -248,6 +252,8 @@ function taskFailure(c: Context, failure: TaskFailure) {
       return c.json({ error: INVALID_TASK_FIELD_ERRORS[failure.field] }, 400);
     case "dependencies_pending":
       return c.json({ error: failure.status, pendingDependencies: failure.pendingDependencies }, 409);
+    case "invalid_dependency":
+      return c.json({ error: failure.status, unknownKeys: failure.unknownKeys }, 400);
     default:
       return c.json({ error: failure.status }, TASK_FAILURE_STATUS[failure.status]);
   }

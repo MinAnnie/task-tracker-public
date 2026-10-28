@@ -126,6 +126,25 @@ describe("createDrizzleTaskStore (Postgres)", () => {
     });
   });
 
+  describe("createTask with dependencies", () => {
+    it("adds the edges in the same transaction and refuses unknown keys without writing", async () => {
+      await seedTask(shop, "RF-1");
+      await seedTask(blog, "BL-1");
+
+      expect(await createTask(deps, mona, "shop", { title: "X", dependsOnKeys: ["BL-1", "RF-7"] })).toEqual({
+        status: "invalid_dependency",
+        unknownKeys: ["BL-1", "RF-7"],
+      });
+      expect(await db.select().from(tasks).where(eq(tasks.projectId, shop))).toHaveLength(1);
+
+      expect(await createTask(deps, mona, "shop", { title: "X", dependsOnKeys: ["rf-1"] })).toMatchObject({
+        status: "created",
+        task: { key: "RF-2", dependsOn: [{ key: "RF-1" }], pendingDependencies: ["RF-1"] },
+      });
+      expect(await db.select().from(taskDependencies)).toHaveLength(1);
+    });
+  });
+
   describe("createTask", () => {
     it("creates tasks with sequential keys and advances the counter", async () => {
       const first = await createTask(deps, mona, "shop", { title: "One", priority: "high", stage: "Backend" });

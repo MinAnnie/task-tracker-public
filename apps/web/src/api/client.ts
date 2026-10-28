@@ -6,14 +6,22 @@ export class ApiError extends Error {
   readonly pendingDependencies: readonly string[];
   /** How many tasks still use a stage, sent with `stage_in_use`. */
   readonly taskCount: number | undefined;
+  /** Dependency keys that name no task of the project, sent with `invalid_dependency`. */
+  readonly unknownKeys: readonly string[];
 
-  constructor(status: number, code: string, pendingDependencies: readonly string[] = [], taskCount?: number) {
+  constructor(
+    status: number,
+    code: string,
+    pendingDependencies: readonly string[] = [],
+    { taskCount, unknownKeys = [] }: { taskCount?: number; unknownKeys?: readonly string[] } = {},
+  ) {
     super(`API error ${status}: ${code}`);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
     this.pendingDependencies = pendingDependencies;
     this.taskCount = taskCount;
+    this.unknownKeys = unknownKeys;
   }
 }
 
@@ -26,15 +34,16 @@ export interface RequestOptions {
 
 async function readErrorBody(
   response: Response,
-): Promise<{ code: string; pending: string[]; taskCount?: number }> {
+): Promise<{ code: string; pending: string[]; taskCount?: number; unknownKeys?: string[] }> {
   try {
     const body: unknown = await response.json();
     if (typeof body === "object" && body !== null) {
-      const { error, pendingDependencies, taskCount } = body as Record<string, unknown>;
+      const { error, pendingDependencies, taskCount, unknownKeys } = body as Record<string, unknown>;
       return {
         code: typeof error === "string" ? error : "unknown_error",
         pending: Array.isArray(pendingDependencies) ? pendingDependencies.map(String) : [],
         ...(typeof taskCount === "number" ? { taskCount } : {}),
+        ...(Array.isArray(unknownKeys) ? { unknownKeys: unknownKeys.map(String) } : {}),
       };
     }
   } catch {
@@ -62,8 +71,8 @@ export async function apiRequest<T>(path: string, { method = "GET", body }: Requ
   }
 
   if (!response.ok) {
-    const { code, pending, taskCount } = await readErrorBody(response);
-    throw new ApiError(response.status, code, pending, taskCount);
+    const { code, pending, taskCount, unknownKeys } = await readErrorBody(response);
+    throw new ApiError(response.status, code, pending, { taskCount, unknownKeys });
   }
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;

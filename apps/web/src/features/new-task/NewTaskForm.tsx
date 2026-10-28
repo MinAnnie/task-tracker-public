@@ -5,6 +5,8 @@ import { Alert } from "../../ui/Alert.tsx";
 import buttons from "../../ui/Button.module.css";
 import { CloseIcon } from "../../ui/icons.tsx";
 import { PriorityIcon } from "../../ui/PriorityIcon.tsx";
+import type { DependencyOption } from "../task-detail/dependency-input.ts";
+import { DependsOnField } from "./DependsOnField.tsx";
 import { EMPTY_VALUES, PRIORITY_HINTS, validateNewTask, type NewTaskValues } from "./new-task-model.ts";
 import styles from "./NewTaskForm.module.css";
 
@@ -16,6 +18,10 @@ export interface NewTaskFormProps {
   assignees: { login: string; label: string }[];
   /** The project's stages, in board order. */
   stages: readonly string[];
+  /** The project's tasks, offered as dependencies. */
+  tasks: readonly DependencyOption[];
+  /** An example task key for this project, e.g. "RF-7". */
+  keyExample: string;
   submitting: boolean;
   /** Server-side failure of the last attempt. */
   error?: string;
@@ -141,6 +147,13 @@ export function NewTaskForm(props: NewTaskFormProps) {
             </select>
           </label>
         </div>
+
+        <DependsOnField
+          value={values.dependsOn}
+          onChange={(dependsOn) => set("dependsOn", dependsOn)}
+          options={props.tasks}
+          keyExample={props.keyExample}
+        />
       </div>
 
       <div className={styles.footer}>

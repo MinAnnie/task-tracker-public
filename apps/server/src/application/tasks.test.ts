@@ -248,6 +248,79 @@ describe("tasks", () => {
       expect(store.tasks).toHaveLength(0);
     });
 
+    it("creates the task with dependencies on existing tasks of the project, case-insensitively", async () => {
+      const done = seedTask("RF-1", { status: "done" });
+      const open = seedTask("RF-2");
+      seedTask("RF-3");
+
+      const result = await createTask(deps, mona, "shop", { title: "Next", dependsOnKeys: ["rf-2", "RF-1", "RF-2"] });
+
+      expect(result).toMatchObject({
+        status: "created",
+        task: {
+          key: "RF-4",
+          status: "todo",
+          dependsOn: [
+            { key: "RF-1", title: "Task RF-1", status: "done" },
+            { key: "RF-2", title: "Task RF-2", status: "todo" },
+          ],
+          pendingDependencies: ["RF-2"],
+          canTake: false,
+        },
+      });
+      const created = store.byKey("RF-4");
+      expect(store.dependencies).toEqual([
+        { taskId: created.id, dependsOnTaskId: open.id },
+        { taskId: created.id, dependsOnTaskId: done.id },
+      ]);
+      expect(store.transactions).toBe(1);
+    });
+
+    it("accepts an empty dependency list", async () => {
+      expect(await createTask(deps, mona, "shop", { title: "X", dependsOnKeys: [] })).toMatchObject({
+        status: "created",
+        task: { dependsOn: [] },
+      });
+    });
+
+    it("rejects unknown keys and tasks of other projects, naming them, and writes nothing", async () => {
+      seedTask("RF-1");
+      store.tasks.push({ ...store.byKey("RF-1"), id: 99, projectId: OTHER_PROJECT_ID, key: "BL-1" });
+
+      const result = await createTask(deps, mona, "shop", { title: "X", dependsOnKeys: ["RF-1", "bl-1", "RF-9", "rf-9"] });
+
+      expect(result).toEqual({ status: "invalid_dependency", unknownKeys: ["bl-1", "RF-9"] });
+      expect(store.tasks.map((t) => t.key)).toEqual(["RF-1", "BL-1"]);
+      expect(store.dependencies).toEqual([]);
+      expect(store.projects[0]?.nextTaskNumber).toBe(1);
+    });
+
+    it.each([
+      ["a non-array", "RF-1"],
+      ["a non-string key", [1]],
+      ["more than 50 keys", Array.from({ length: 51 }, (_, i) => `RF-${i + 1}`)],
+    ])("rejects %s as dependsOnKeys", async (_, dependsOnKeys) => {
+      expect(await createTask(deps, mona, "shop", { title: "X", dependsOnKeys })).toEqual({
+        status: "invalid",
+        field: "dependsOnKeys",
+      });
+    });
+
+    it("refuses an assignee while a dependency is pending, like assigning an existing task", async () => {
+      seedTask("RF-1");
+      seedTask("RF-2", { status: "done" });
+      const result = await createTask(deps, mona, "shop", { title: "X", assigneeLogin: "bob", dependsOnKeys: ["RF-1", "RF-2"] });
+      expect(result).toEqual({ status: "dependencies_pending", pendingDependencies: ["RF-1"] });
+      expect(store.tasks).toHaveLength(2);
+    });
+
+    it("assigns and starts the task when every dependency is done", async () => {
+      seedTask("RF-1", { status: "done" });
+      expect(
+        await createTask(deps, mona, "shop", { title: "X", assigneeLogin: "bob", dependsOnKeys: ["RF-1"] }),
+      ).toMatchObject({ status: "created", task: { status: "in_progress", assignee: assigneeOf(bob) } });
+    });
+
     it("treats a null assignee as none", async () => {
       expect(await createTask(deps, mona, "shop", { title: "X", assigneeLogin: null })).toMatchObject({
         task: { status: "todo", assignee: null },

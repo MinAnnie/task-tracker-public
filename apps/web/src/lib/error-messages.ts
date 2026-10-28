@@ -59,6 +59,11 @@ const MESSAGES: Record<string, string> = {
 
 export function errorMessage(error: unknown): string {
   if (!isApiError(error)) return GENERIC;
+  if (error.code === "invalid_dependency") {
+    return error.unknownKeys.length > 0
+      ? `These tasks don’t exist in this project: ${error.unknownKeys.join(", ")}.`
+      : "Pick dependencies among this project’s tasks (up to 50).";
+  }
   if (error.code === "stage_in_use") {
     const count = error.taskCount ?? 0;
     if (count === 0) return "Tasks are in this stage. Move them to another stage first.";

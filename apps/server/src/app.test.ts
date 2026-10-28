@@ -1511,10 +1511,19 @@ describe("POST /api/projects/:slug/tasks", () => {
     [{ status: "invalid", field: "stage" }, { error: "invalid_task_stage" }],
     [{ status: "invalid_stage" }, { error: "invalid_stage" }],
     [{ status: "invalid_assignee" }, { error: "invalid_assignee" }],
+    [{ status: "invalid", field: "dependsOnKeys" }, { error: "invalid_dependency" }],
+    [{ status: "invalid_dependency", unknownKeys: ["RF-9"] }, { error: "invalid_dependency", unknownKeys: ["RF-9"] }],
   ] as const)("maps %j to 400", async (result, body) => {
     const res = await post(makeApp({ ...asUser(member), createTask: async () => result }), "{}");
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual(body);
+  });
+
+  it("maps pending dependencies of an assigned new task to 409", async () => {
+    const result = { status: "dependencies_pending", pendingDependencies: ["RF-2"] } as const;
+    const res = await post(makeApp({ ...asUser(member), createTask: async () => result }), "{}");
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "dependencies_pending", pendingDependencies: ["RF-2"] });
   });
 });
 
