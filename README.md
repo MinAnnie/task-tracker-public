@@ -28,8 +28,9 @@
 | ✋ **Take & release** | One click to claim a task. Two people taking it at once never both win. |
 | 🔗 **PRs link themselves** | Put the task key (`RF-04`) in the branch or PR title. Opening the PR moves the task to `in_review`, merging it moves it to `done`. |
 | 💬 **Discord notifications** | Each project posts to its own channel: new tasks, takes, assignments, PRs and unblocked tasks. |
+| 🔌 **Connect Discord** | Admins add the bot to a server and pick the project's channel from the project settings; slash commands and an invite link are set up for them. |
 | 🪪 **Discord account linking** | Connect your Discord account from the account menu (OAuth, `identify` scope only). Linked users get a real `@mention` when a task is assigned to them, and can use the bot. |
-| ⌨️ **Slash commands** | `/tasks`, `/mine`, `/task`, `/take` and `/release` right from the project's channel, with key autocomplete and private replies. |
+| ⌨️ **Slash commands** | `/tasks`, `/mine`, `/task`, `/take` and `/release` right from the project's channel, with key autocomplete and private replies. They sync to every connected server on startup. |
 | 📥 **Bulk import CLI** | Load a whole backlog, with dependencies, from one JSON file with the `import-tasks` command (there is no import screen in the web app). Supports `--dry-run`; everything is validated first and written in a single transaction. |
 | 🗂️ **Stages per project** | Each project has its own ordered list of stages. Admins add, rename (tasks follow), reorder and delete them; forms pick from the list. |
 | 🔎 **Board filters** | Search by text, filter by availability (ready or blocked), priority, stage and any team member, and sort by priority, newest, oldest or recently updated. Everything lives in the URL, so you can share the view, and the board remembers it per project when you come back from a task. |
@@ -101,8 +102,8 @@ curl http://127.0.0.1:3000/health
 | `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | Credentials of the GitHub OAuth app used for login. Required. |
 | `ADMIN_GITHUB_LOGINS` | Comma-separated GitHub logins with the admin role (case-insensitive). Admins manage members from the app. Required; empty fails startup. |
 | `APP_BASE_URL` | Public origin of the app, e.g. `https://your-tracker.example.com`. The OAuth callback is `<APP_BASE_URL>/auth/github/callback`; cookies get `Secure` when it is https. Required. |
-| `DISCORD_BOT_TOKEN` | Token of the Discord bot that posts project notifications. Optional; when unset, notifications are disabled (logged once at startup). Never logged. |
-| `DISCORD_APPLICATION_ID` / `DISCORD_CLIENT_SECRET` | OAuth2 client id and secret of the Discord application used to link accounts. Optional, but set both or neither (only one fails startup); when unset, linking is disabled. Add `<APP_BASE_URL>/auth/discord/callback` as a redirect in the Discord developer portal. The secret is never logged. |
+| `DISCORD_BOT_TOKEN` | Token of the Discord bot that posts project notifications. Optional; when unset, notifications, Connect Discord and the startup command sync are disabled (logged once at startup). Never logged. |
+| `DISCORD_APPLICATION_ID` / `DISCORD_CLIENT_SECRET` | OAuth2 client id and secret of the Discord application used to link accounts. Optional, but set both or neither (only one fails startup); when unset, linking is disabled. Add `<APP_BASE_URL>/auth/discord/callback` as a redirect in the Discord developer portal; Connect Discord reuses it (it also needs `DISCORD_BOT_TOKEN`). The secret is never logged. |
 | `DISCORD_PUBLIC_KEY` | Public key (64 hex characters) of the Discord application, used to verify slash command requests. Optional; when unset, `POST /discord/interactions` answers `404`. A malformed value fails startup. |
 | `DISCORD_GUILD_ID` | Only read by the `discord:register` script: registers the commands in this server instead of globally. |
 | `WEB_DIST_DIR` | Directory of the built web app to serve at `/` (set in the Docker image). |
@@ -123,9 +124,10 @@ Then point a GitHub webhook at `<APP_BASE_URL>/webhooks/github` ([details](docs/
 
 All three Discord features use the same application from the [Discord developer portal](https://discord.com/developers/applications):
 
-1. **Bot → Token** into `DISCORD_BOT_TOKEN`, and invite the bot with the `bot` + `applications.commands` scopes. Set each project's channel in Admin → the project.
+1. **Bot → Token** into `DISCORD_BOT_TOKEN`.
 2. **OAuth2**: copy the client id and secret into `DISCORD_APPLICATION_ID` / `DISCORD_CLIENT_SECRET`, and add `<APP_BASE_URL>/auth/discord/callback` as a redirect. Users then connect their account from the account menu → **Connect Discord**.
-3. **General Information → Public Key** into `DISCORD_PUBLIC_KEY`, deploy, set the **Interactions Endpoint URL** to `<APP_BASE_URL>/discord/interactions` and register the commands.
+3. **General Information → Public Key** into `DISCORD_PUBLIC_KEY`, deploy, and set the **Interactions Endpoint URL** to `<APP_BASE_URL>/discord/interactions`.
+4. In Admin → the project → **Discord**, click **Connect Discord**, pick the server and then the channel. The bot joins with the right scopes, the slash commands are registered there and an invite link is created. On every start the server re-syncs the commands in every connected server.
 
 Step by step, with every message and command: [docs/discord.md](docs/discord.md).
 
@@ -144,7 +146,7 @@ The server follows a ports-and-adapters design: use cases in `src/application/` 
 ## 📚 Documentation
 
 - [HTTP API](docs/api.md): roles, admin, projects, stages and tasks endpoints, the GitHub webhook and API tokens (scopes, personal tokens)
-- [Discord](docs/discord.md): notifications, account linking and slash commands
+- [Discord](docs/discord.md): notifications, Connect Discord, account linking, slash commands and the startup command sync
 - [Bulk import CLI](docs/import.md): the JSON format and how to run `import-tasks` locally or in production
 - [MCP server](apps/mcp/README.md): build, configuration and Claude Code registration
 
