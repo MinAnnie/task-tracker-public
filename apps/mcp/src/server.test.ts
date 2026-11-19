@@ -2,12 +2,12 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { describe, expect, it, vi } from "vitest";
 import type { TrackerClient } from "./client.ts";
-import { createServer } from "./server.ts";
+import { createTrackerMcpServer } from "./server.ts";
 import { listItem } from "./test-fixtures.ts";
 
 async function connect(client: TrackerClient | undefined, { apiUrl }: { apiUrl?: string } = { apiUrl: "https://tracker.test" }) {
   const config = { token: client ? "ttk_x" : undefined, apiUrl, project: undefined };
-  const server = createServer({ client, config });
+  const server = createTrackerMcpServer({ client, config });
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   const mcp = new Client({ name: "test", version: "0.0.0" });
   await Promise.all([server.connect(serverSide), mcp.connect(clientSide)]);

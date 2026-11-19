@@ -47,17 +47,24 @@ export interface TrackerClientOptions {
 
 export const DEFAULT_TIMEOUT_MS = 10_000;
 
-type RequestContext = { slug?: string; key?: string; dependsOnKey?: string; write?: boolean };
+/** What a failed call was about, to word its error for the model. */
+export type ApiErrorContext = { slug?: string; key?: string; dependsOnKey?: string; write?: boolean };
 
-interface ErrorBody {
-  code: string | undefined;
-  unknownKeys: string[];
-  pendingDependencies: string[];
+/** A non-2xx answer of the Task Tracker API: status, `error` code and the details some codes carry. */
+export interface ApiFailure {
+  status: number;
+  code?: string | undefined;
+  unknownKeys?: readonly string[];
+  pendingDependencies?: readonly string[];
+  /** From `Retry-After` on a 429. */
+  retryAfterSeconds?: number | undefined;
 }
+
+type RequestContext = ApiErrorContext;
 
 const strings = (value: unknown) => (Array.isArray(value) ? value.map(String) : []);
 
-const errorBody = async (response: Response): Promise<ErrorBody> => {
+const errorBody = async (response: Response): Promise<Omit<ApiFailure, "status">> => {
   try {
     const body = (await response.json()) as Record<string, unknown> | null;
     const code = body?.error;
@@ -77,6 +84,60 @@ const FORBIDDEN_WRITE =
 
 const withCode = (status: number, code: string | undefined) => (code ? `${status} ${code}` : `${status}`);
 
+/**
+ * The error a tool shows for a failed API answer. Shared by the HTTP client and by any
+ * other {@link TrackerClient} (such as the server's in-process one), so both word every
+ * failure identically. Never includes a token.
+ */
+export function apiError(
+  { status, code, unknownKeys = [], pendingDependencies = [], retryAfterSeconds }: ApiFailure,
+  context: ApiErrorContext,
+): TrackerApiError {
+  switch (status) {
+    case 400:
+    case 409: {
+      if (!context.write) break;
+      const details = [
+        unknownKeys.length > 0 ? ` Unknown task keys: ${unknownKeys.join(", ")}.` : "",
+        pendingDependencies.length > 0 ? ` Pending dependencies: ${pendingDependencies.join(", ")}.` : "",
+      ].join("");
+      return new TrackerApiError("rejected", `The Task Tracker API refused the change (${withCode(status, code)}).${details}`);
+    }
+    case 401:
+      return new TrackerApiError("unauthorized", `The token is invalid, expired or revoked (${withCode(401, code)}).`);
+    case 403:
+      if (context.write && code === "token_not_allowed") return new TrackerApiError("read_only", READ_ONLY_TOKEN_MESSAGE);
+      if (context.write && code === "forbidden") return new TrackerApiError("forbidden", FORBIDDEN_WRITE);
+      if (code === "forbidden" && context.slug !== undefined) {
+        return new TrackerApiError(
+          "forbidden",
+          `The owner of this personal token cannot access project "${context.slug}" (403 forbidden). ` +
+            "Use list_projects to see the projects it can access.",
+        );
+      }
+      return new TrackerApiError("forbidden", `The token is not allowed to call this endpoint (${withCode(403, code)}).`);
+    case 404:
+      if (code === "dependency_not_found" && context.dependsOnKey !== undefined) {
+        return new TrackerApiError(
+          "not_found",
+          `${context.key} does not depend on ${context.dependsOnKey} in project "${context.slug}".`,
+        );
+      }
+      if (code === "task_not_found" && context.key !== undefined) {
+        return new TrackerApiError("not_found", `Task "${context.key}" was not found in project "${context.slug}".`);
+      }
+      if (context.slug !== undefined) {
+        return new TrackerApiError("not_found", `Project "${context.slug}" was not found (or is not visible to this token).`);
+      }
+      return new TrackerApiError("not_found", `Not found (${withCode(404, code)}).`);
+    case 429: {
+      const when = retryAfterSeconds === undefined ? "retry in a minute" : `retry after ${retryAfterSeconds} seconds`;
+      return new TrackerApiError("rate_limited", `Rate limited by the Task Tracker API; ${when}.`, retryAfterSeconds);
+    }
+  }
+  return new TrackerApiError("http", `The Task Tracker API answered HTTP ${status}.`);
+}
+
 export function createTrackerClient({
   apiUrl,
   token,
@@ -87,61 +148,9 @@ export function createTrackerClient({
   const redact = (text: string) => text.split(token).join("[redacted]");
 
   async function failure(response: Response, context: RequestContext): Promise<TrackerApiError> {
-    const { code, unknownKeys, pendingDependencies } = await errorBody(response);
-    switch (response.status) {
-      case 400:
-      case 409: {
-        if (!context.write) break;
-        const details = [
-          unknownKeys.length > 0 ? ` Unknown task keys: ${unknownKeys.join(", ")}.` : "",
-          pendingDependencies.length > 0 ? ` Pending dependencies: ${pendingDependencies.join(", ")}.` : "",
-        ].join("");
-        return new TrackerApiError(
-          "rejected",
-          `The Task Tracker API refused the change (${withCode(response.status, code)}).${details}`,
-        );
-      }
-      case 401:
-        return new TrackerApiError("unauthorized", `The token is invalid, expired or revoked (${withCode(401, code)}).`);
-      case 403:
-        if (context.write && code === "token_not_allowed") return new TrackerApiError("read_only", READ_ONLY_TOKEN_MESSAGE);
-        if (context.write && code === "forbidden") return new TrackerApiError("forbidden", FORBIDDEN_WRITE);
-        if (code === "forbidden" && context.slug !== undefined) {
-          return new TrackerApiError(
-            "forbidden",
-            `The owner of this personal token cannot access project "${context.slug}" (403 forbidden). ` +
-              "Use list_projects to see the projects it can access.",
-          );
-        }
-        return new TrackerApiError(
-          "forbidden",
-          `The token is not allowed to call this endpoint (${withCode(403, code)}).`,
-        );
-      case 404:
-        if (code === "dependency_not_found" && context.dependsOnKey !== undefined) {
-          return new TrackerApiError(
-            "not_found",
-            `${context.key} does not depend on ${context.dependsOnKey} in project "${context.slug}".`,
-          );
-        }
-        if (code === "task_not_found" && context.key !== undefined) {
-          return new TrackerApiError("not_found", `Task "${context.key}" was not found in project "${context.slug}".`);
-        }
-        if (context.slug !== undefined) {
-          return new TrackerApiError(
-            "not_found",
-            `Project "${context.slug}" was not found (or is not visible to this token).`,
-          );
-        }
-        return new TrackerApiError("not_found", `Not found (${withCode(404, code)}).`);
-      case 429: {
-        const header = response.headers.get("retry-after");
-        const seconds = header !== null && /^\d+$/.test(header.trim()) ? Number(header.trim()) : undefined;
-        const when = seconds === undefined ? "retry in a minute" : `retry after ${seconds} seconds`;
-        return new TrackerApiError("rate_limited", `Rate limited by the Task Tracker API; ${when}.`, seconds);
-      }
-    }
-    return new TrackerApiError("http", `The Task Tracker API answered HTTP ${response.status}.`);
+    const header = response.headers.get("retry-after");
+    const retryAfterSeconds = header !== null && /^\d+$/.test(header.trim()) ? Number(header.trim()) : undefined;
+    return apiError({ status: response.status, ...(await errorBody(response)), retryAfterSeconds }, context);
   }
 
   async function request<T>(

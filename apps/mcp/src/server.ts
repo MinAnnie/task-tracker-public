@@ -28,8 +28,25 @@ const project = z
       "Required when the token sees several projects (a personal token) and TRACKER_PROJECT is unset.",
   );
 
-/** An MCP server exposing the Task Tracker read API as tools. */
-export function createServer(deps: ToolDeps): McpServer {
+/** Every tool the server registers: four that read and four that modify data. */
+export const TOOL_NAMES = [
+  "list_projects",
+  "list_tasks",
+  "get_task",
+  "next_tasks",
+  "create_task",
+  "update_task",
+  "add_dependency",
+  "remove_dependency",
+] as const;
+
+/**
+ * The Task Tracker MCP server: the single definition of its tools (names, descriptions,
+ * schemas, output). It talks to the tracker only through `deps.client`, so the stdio
+ * entry (HTTP client) and the server's remote endpoint (in-process client) share it.
+ * Create one per connection: an McpServer serves a single transport.
+ */
+export function createTrackerMcpServer(deps: ToolDeps): McpServer {
   const tools = createToolHandlers(deps);
   const server = new McpServer(
     { name: SERVER_NAME, version: SERVER_VERSION },

@@ -2,6 +2,13 @@
   "name": "@task-tracker/mcp",
   "private": true,
   "type": "module",
+  "exports": {
+    ".": {
+      "development": "./src/lib.ts",
+      "types": "./dist/lib.d.ts",
+      "default": "./dist/lib.js"
+    }
+  },
   "bin": {
     "task-tracker-mcp": "dist/index.js"
   },

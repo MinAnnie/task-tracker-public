@@ -2,7 +2,7 @@
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { createTrackerClient } from "./client.ts";
 import { readConfig } from "./config.ts";
-import { createServer } from "./server.ts";
+import { createTrackerMcpServer } from "./server.ts";
 
 // stdout carries the MCP protocol: log to stderr only, and never the token or request headers.
 const log = (message: string) => process.stderr.write(`[task-tracker-mcp] ${message}\n`);
@@ -15,7 +15,7 @@ const client =
 const missing = [config.token === undefined && "TRACKER_API_TOKEN", config.apiUrl === undefined && "TRACKER_API_URL"].filter(
   Boolean,
 );
-const server = createServer({ client, config });
+const server = createTrackerMcpServer({ client, config });
 
 await server.connect(new StdioServerTransport());
 log(
