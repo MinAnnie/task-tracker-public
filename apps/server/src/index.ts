@@ -13,6 +13,7 @@ import {
 import { completeGithubLogin } from "./application/complete-github-login.ts";
 import { resolveDiscordCaller } from "./application/discord-caller.ts";
 import { completeDiscordBotInstall, listDiscordChannels, selectDiscordChannel } from "./application/discord-bot-install.ts";
+import { backfillDiscordGuilds, syncDiscordCommands } from "./application/discord-guild-sync.ts";
 import { completeDiscordLink, findDiscordAccount, unlinkDiscordAccount } from "./application/discord-link.ts";
 import { handlePullRequestEvent } from "./application/handle-pull-request-event.ts";
 import { addMember, listMembers, removeMember } from "./application/members.ts";
@@ -50,6 +51,7 @@ import { createNotificationPublisher } from "./infrastructure/create-notificatio
 import { createDrizzleApiTokenStore } from "./infrastructure/drizzle-api-token-store.ts";
 import { createInMemoryRateLimiter } from "./infrastructure/in-memory-rate-limiter.ts";
 import { createDiscordBotHttpClient } from "./infrastructure/discord-bot-http-client.ts";
+import { createDiscordGuildSyncHttpClient } from "./infrastructure/discord-guild-sync-http-client.ts";
 import { createDiscordOAuthHttpClient } from "./infrastructure/discord-oauth-http-client.ts";
 import { createDrizzleAuthStore } from "./infrastructure/drizzle-auth-store.ts";
 import { createDrizzleProjectStore } from "./infrastructure/drizzle-project-store.ts";
@@ -197,8 +199,36 @@ const app = createApp({
   deleteStage: (slug, stageId) => deleteStage(stagesDeps, slug, stageId),
 });
 
+/**
+ * Background work after the server listens, never blocking or crashing startup: fill the
+ * Discord server of projects configured by hand (needs the bot token), then register the
+ * slash commands in every connected server (also needs the application id).
+ */
+async function syncDiscordOnStartup(): Promise<void> {
+  if (config.discordBotToken === undefined) {
+    console.log("Discord startup sync skipped: DISCORD_BOT_TOKEN is not set.");
+    return;
+  }
+  const applicationId = config.discordOAuth?.applicationId;
+  const deps = {
+    store: projectStore,
+    discord: createDiscordGuildSyncHttpClient({ applicationId, botToken: config.discordBotToken }),
+  };
+  const backfill = await backfillDiscordGuilds(deps);
+  console.log(`Discord server backfill: ${backfill.filled} filled, ${backfill.failed} failed.`);
+  if (applicationId === undefined) {
+    console.log("Discord command sync skipped: DISCORD_APPLICATION_ID is not set.");
+    return;
+  }
+  const sync = await syncDiscordCommands(deps);
+  console.log(`Discord commands synced to ${sync.synced} servers (${sync.failed} failed).`);
+}
+
 const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
   console.log(`Server listening on port ${info.port}`);
+  syncDiscordOnStartup().catch((error: unknown) => {
+    console.error(`Discord startup sync failed: ${error instanceof Error ? error.message : String(error)}`);
+  });
 });
 
 /** Gives pending notifications a few seconds to go out before exiting. */

@@ -75,7 +75,7 @@ function allowedMentions(event: NotificationEvent): { parse: [] } | { users: [st
 }
 
 /** Milliseconds to wait before retrying a 429: `retry_after` (seconds) from the body, else the header. */
-async function retryDelayMs(res: Response): Promise<number> {
+export async function retryDelayMs(res: Response): Promise<number> {
   let seconds = Number(res.headers.get("retry-after"));
   try {
     const body = (await res.json()) as { retry_after?: unknown };
