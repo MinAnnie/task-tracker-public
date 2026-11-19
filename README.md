@@ -31,10 +31,13 @@
 | 🪪 **Discord account linking** | Connect your Discord account from the account menu (OAuth, `identify` scope only). Linked users get a real `@mention` when a task is assigned to them, and can use the bot. |
 | ⌨️ **Slash commands** | `/tasks`, `/mine`, `/task`, `/take` and `/release` right from the project's channel, with key autocomplete and private replies. |
 | 📥 **Bulk import CLI** | Load a whole backlog, with dependencies, from one JSON file with the `import-tasks` command (there is no import screen in the web app). Supports `--dry-run`; everything is validated first and written in a single transaction. |
-| 🔎 **Board filters** | Search by text, filter by availability (ready or blocked), priority, stage and any team member, and sort by priority, newest, oldest or recently updated. Everything lives in the URL, so you can share the view. |
-| ✏️ **Inline editing** | Fix a task's title, description or stage from its detail page, with the same validation as the API. |
+| 🗂️ **Stages per project** | Each project has its own ordered list of stages. Admins add, rename (tasks follow), reorder and delete them; forms pick from the list. |
+| 🔎 **Board filters** | Search by text, filter by availability (ready or blocked), priority, stage and any team member, and sort by priority, newest, oldest or recently updated. Everything lives in the URL, so you can share the view, and the board remembers it per project when you come back from a task. |
+| ✏️ **Inline editing** | Fix a task's title, description or stage from its detail page, with the same validation as the API. New tasks can list the tasks they depend on. |
+| 📝 **Markdown descriptions** | Descriptions render as GitHub-flavored Markdown (no raw HTML) and are edited with a toolbar, `Ctrl/Cmd+B`/`I` shortcuts and a Write/Preview toggle. |
 | 🤖 **Copy for AI** | Every task can be copied as a ready-made Markdown brief for your coding assistant. |
-| 🧠 **MCP server** | Project-scoped, read-only API tokens plus an MCP server, so an agent can ask "what should I work on next?". |
+| 🔑 **API tokens** | Project tokens (admins) and personal tokens (any user), each **Read only** or **Read & write**, for scripts and AI agents. |
+| 🧠 **MCP server** | An agent can ask "what should I work on next?" and, with a write token, create and update tasks. |
 
 ## 🔄 How it works
 
@@ -140,7 +143,7 @@ The server follows a ports-and-adapters design: use cases in `src/application/` 
 
 ## 📚 Documentation
 
-- [HTTP API](docs/api.md): roles, admin, projects and tasks endpoints, the GitHub webhook and API tokens
+- [HTTP API](docs/api.md): roles, admin, projects, stages and tasks endpoints, the GitHub webhook and API tokens (scopes, personal tokens)
 - [Discord](docs/discord.md): notifications, account linking and slash commands
 - [Bulk import CLI](docs/import.md): the JSON format and how to run `import-tasks` locally or in production
 - [MCP server](apps/mcp/README.md): build, configuration and Claude Code registration
