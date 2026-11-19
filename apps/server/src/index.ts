@@ -12,6 +12,7 @@ import {
 } from "./application/api-tokens.ts";
 import { completeGithubLogin } from "./application/complete-github-login.ts";
 import { resolveDiscordCaller } from "./application/discord-caller.ts";
+import { completeDiscordBotInstall, listDiscordChannels, selectDiscordChannel } from "./application/discord-bot-install.ts";
 import { completeDiscordLink, findDiscordAccount, unlinkDiscordAccount } from "./application/discord-link.ts";
 import { handlePullRequestEvent } from "./application/handle-pull-request-event.ts";
 import { addMember, listMembers, removeMember } from "./application/members.ts";
@@ -48,6 +49,7 @@ import { runMigrations } from "./db/migrate.ts";
 import { createNotificationPublisher } from "./infrastructure/create-notification-publisher.ts";
 import { createDrizzleApiTokenStore } from "./infrastructure/drizzle-api-token-store.ts";
 import { createInMemoryRateLimiter } from "./infrastructure/in-memory-rate-limiter.ts";
+import { createDiscordBotHttpClient } from "./infrastructure/discord-bot-http-client.ts";
 import { createDiscordOAuthHttpClient } from "./infrastructure/discord-oauth-http-client.ts";
 import { createDrizzleAuthStore } from "./infrastructure/drizzle-auth-store.ts";
 import { createDrizzleProjectStore } from "./infrastructure/drizzle-project-store.ts";
@@ -96,6 +98,22 @@ const discordOAuthClient = config.discordOAuth
     })
   : undefined;
 console.log(`Discord account linking ${discordOAuthClient ? "enabled" : "disabled"}.`);
+// Connect Discord (bot install from the project settings) needs the OAuth app and the bot.
+const discordBotClient =
+  config.discordOAuth && config.discordBotToken
+    ? createDiscordBotHttpClient({
+        applicationId: config.discordOAuth.applicationId,
+        clientSecret: config.discordOAuth.clientSecret,
+        botToken: config.discordBotToken,
+        redirectUri: new URL("/auth/discord/callback", config.appBaseUrl).toString(),
+      })
+    : undefined;
+console.log(`Connect Discord (bot install) ${discordBotClient ? "enabled" : "disabled"}.`);
+/** Deps of the Connect Discord use cases; the app only routes to them when they are enabled. */
+const discordBotDeps = () => {
+  if (discordBotClient === undefined) throw new Error("Connect Discord is disabled");
+  return { store: projectStore, discord: discordBotClient };
+};
 // Slash commands run the same task use cases as the web, so the rules are identical.
 const handleDiscordInteraction = createDiscordInteractionHandler({
   appBaseUrl: config.appBaseUrl,
@@ -150,6 +168,10 @@ const app = createApp({
     removeTaskDependency(tasksDeps, user, slug, key, dependsOnKey),
   deleteTask: (user, slug, key) => deleteTask(tasksDeps, user, slug, key),
   discordApplicationId: config.discordOAuth?.applicationId,
+  discordBotInstallEnabled: discordBotClient !== undefined,
+  completeDiscordBotInstall: (slug, code) => completeDiscordBotInstall(discordBotDeps(), slug, code),
+  listDiscordChannels: (slug) => listDiscordChannels(discordBotDeps(), slug),
+  selectDiscordChannel: (slug, body) => selectDiscordChannel(discordBotDeps(), slug, body),
   completeDiscordLink: async (userId, code) => {
     // The app only routes here when linking is configured.
     if (discordOAuthClient === undefined) throw new Error("Discord account linking is disabled");

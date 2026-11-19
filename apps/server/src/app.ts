@@ -1,4 +1,4 @@
-import { randomBytes, timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { existsSync } from "node:fs";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
@@ -18,6 +18,11 @@ import type {
 } from "./application/api-tokens.ts";
 import type { DiscordAccount, SessionUser } from "./application/auth-store.ts";
 import type { CompleteGithubLoginResult } from "./application/complete-github-login.ts";
+import type {
+  CompleteDiscordBotInstallResult,
+  ListDiscordChannelsResult,
+  SelectDiscordChannelResult,
+} from "./application/discord-bot-install.ts";
 import type { CompleteDiscordLinkResult } from "./application/discord-link.ts";
 import type {
   AddMemberResult,
@@ -141,6 +146,17 @@ export interface AppDeps {
   deleteTask: (user: AuthenticatedUser, slug: string, key: string) => Promise<DeleteTaskResult>;
   /** Client id (application id) of the Discord OAuth2 app; `undefined` disables account linking. */
   discordApplicationId: string | undefined;
+  /**
+   * Whether admins can connect a project to a Discord server from its settings: needs
+   * the application id, client secret and bot token. Implies {@link discordApplicationId}.
+   */
+  discordBotInstallEnabled: boolean;
+  /** Use case storing the guild behind a bot-install `code` on a project. */
+  completeDiscordBotInstall: (slug: string, code: string) => Promise<CompleteDiscordBotInstallResult>;
+  /** The connected guild's channels a project may post to. */
+  listDiscordChannels: (slug: string) => Promise<ListDiscordChannelsResult>;
+  /** Picks the project's channel among its guild's; `body` is the untrusted parsed request body. */
+  selectDiscordChannel: (slug: string, body: unknown) => Promise<SelectDiscordChannelResult>;
   /** Use case linking the Discord account behind an OAuth `code` to a user. */
   completeDiscordLink: (userId: number, code: string) => Promise<CompleteDiscordLinkResult>;
   findDiscordAccount: (userId: number) => Promise<DiscordAccount | null>;
@@ -312,6 +328,42 @@ const DISCORD_STATE_COOKIE_PATH = "/auth/discord";
 /** Outcome of the Discord linking flow, handed to the web app as `/?discord=<outcome>`. */
 type DiscordLinkOutcome = "linked" | "already_linked" | "cancelled" | "failed";
 
+/**
+ * "Connect Discord" installs the bot in a server through the same callback URL as
+ * account linking (the only redirect registered in the Discord portal); its own state
+ * cookie tells the two flows apart.
+ */
+const DISCORD_BOT_STATE_COOKIE = "discord_bot_install_state";
+/** `bot` adds the bot to the chosen server; `applications.commands` allows the slash commands. */
+const DISCORD_BOT_SCOPE = "bot applications.commands";
+/** Create Instant Invite (1) + View Channel (1024) + Send Messages (2048). */
+const DISCORD_BOT_PERMISSIONS = "3073";
+
+/** Outcome of the bot install, handed to the project settings as `?discordBot=<outcome>`. */
+type DiscordBotInstallOutcome = "connected" | "cancelled" | "failed";
+
+/**
+ * The bot-install state cookie: `<state>.<slug>.<issued at, seconds>.<mac>`, where the
+ * MAC is an HMAC-SHA256 keyed by the admin's session token. Only that session can
+ * produce or use it, and changing the project or the issue time breaks it.
+ */
+function botInstallMac(sessionToken: string, state: string, slug: string, issuedAt: number): string {
+  return createHmac("sha256", sessionToken)
+    .update(`discord_bot_install|${state}|${slug}|${issuedAt}`)
+    .digest("base64url");
+}
+
+function parseBotInstallCookie(value: string): { state: string; slug: string; issuedAt: number; mac: string } | undefined {
+  const parts = value.split(".");
+  if (parts.length !== 4) return undefined;
+  const [state = "", slug = "", issued = "", mac = ""] = parts;
+  const issuedAt = Number(issued);
+  if (state === "" || mac === "" || normalizeProjectSlug(slug) !== slug || !/^\d{1,12}$/.test(issued)) {
+    return undefined;
+  }
+  return { state, slug, issuedAt, mac };
+}
+
 /** Constant-time string comparison that never throws on length mismatch. */
 function safeEqual(a: string, b: string): boolean {
   const left = Buffer.from(a, "utf8");
@@ -374,6 +426,10 @@ export function createApp({
   removeTaskDependency,
   deleteTask,
   discordApplicationId,
+  discordBotInstallEnabled,
+  completeDiscordBotInstall,
+  listDiscordChannels,
+  selectDiscordChannel,
   completeDiscordLink,
   findDiscordAccount,
   unlinkDiscordAccount,
@@ -691,6 +747,7 @@ export function createApp({
       role: user.role,
       discord: await findDiscordAccount(user.id),
       discordLinkingEnabled: discordApplicationId !== undefined,
+      discordBotInstallEnabled,
     });
   });
 
@@ -730,7 +787,57 @@ export function createApp({
     return c.redirect(authorize.toString(), 302);
   });
 
+  const botInstalled = (c: Context, slug: string, outcome: DiscordBotInstallOutcome) =>
+    c.redirect(`/admin/projects/${encodeURIComponent(slug)}?discordBot=${outcome}`, 302);
+
+  /**
+   * The bot-install leg of the shared callback. The state cookie is single-use (cleared
+   * here), expires after {@link STATE_TTL_SECONDS}, and is bound to the session and the
+   * project; the caller must still be an admin. The guild comes only from Discord's
+   * token response, never from the `guild_id` query parameter.
+   */
+  const finishBotInstall = async (c: Context, cookie: string) => {
+    deleteCookie(c, DISCORD_BOT_STATE_COOKIE, { path: DISCORD_STATE_COOKIE_PATH, secure });
+    const user = await sessionUser(c);
+    if (user === undefined) return c.redirect("/login", 302);
+
+    const pending = parseBotInstallCookie(cookie);
+    if (pending === undefined) return c.redirect("/admin/projects?discordBot=failed", 302);
+    const { state: expectedState, slug, issuedAt, mac } = pending;
+
+    const sessionToken = getCookie(c, SESSION_COOKIE) ?? "";
+    const state = c.req.query("state");
+    const fresh = Math.floor(Date.now() / 1000) - issuedAt <= STATE_TTL_SECONDS;
+    const valid =
+      user.role === "admin" &&
+      fresh &&
+      state !== undefined &&
+      safeEqual(state, expectedState) &&
+      safeEqual(mac, botInstallMac(sessionToken, expectedState, slug, issuedAt));
+    if (!valid) return botInstalled(c, slug, "failed");
+    if (c.req.query("error") !== undefined) return botInstalled(c, slug, "cancelled");
+    const code = c.req.query("code");
+    if (!code) return botInstalled(c, slug, "failed");
+
+    try {
+      const result = await completeDiscordBotInstall(slug, code);
+      return botInstalled(c, slug, result.status === "connected" ? "connected" : "failed");
+    } catch (error) {
+      console.error("Discord bot install failed:", error);
+      return botInstalled(c, slug, "failed");
+    }
+  };
+
   app.get("/auth/discord/callback", requireDiscordLinking, async (c) => {
+    // A pending bot install owns the callback unless the state belongs to account linking.
+    const botCookie = discordBotInstallEnabled ? getCookie(c, DISCORD_BOT_STATE_COOKIE) : undefined;
+    if (botCookie !== undefined) {
+      const linkingState = getCookie(c, DISCORD_STATE_COOKIE);
+      const queryState = c.req.query("state");
+      const isLinking = !!linkingState && !!queryState && safeEqual(queryState, linkingState);
+      if (!isLinking) return finishBotInstall(c, botCookie);
+    }
+
     const expectedState = getCookie(c, DISCORD_STATE_COOKIE);
     deleteCookie(c, DISCORD_STATE_COOKIE, { path: DISCORD_STATE_COOKIE_PATH, secure });
 
@@ -972,6 +1079,84 @@ export function createApp({
       case "project_not_found":
       case "stage_not_found":
         return c.json({ error: result.status }, 404);
+    }
+  });
+
+  /** 404 for the Connect Discord routes while the bot install is not configured. */
+  const requireDiscordBotInstall = createMiddleware(async (c, next) => {
+    if (!discordBotInstallEnabled) return c.json({ error: "discord_bot_install_disabled" }, 404);
+    await next();
+  });
+
+  // A full-page navigation from the project settings: answers with a redirect to Discord.
+  admin.get("/projects/:slug/discord/connect", requireDiscordBotInstall, async (c) => {
+    const found = await getProject(c.req.param("slug"));
+    if (found.status === "not_found") return c.json({ error: "project_not_found" }, 404);
+    const { slug } = found.project;
+
+    const state = randomBytes(32).toString("base64url");
+    const issuedAt = Math.floor(Date.now() / 1000);
+    // requireUser guarantees the session cookie is present.
+    const mac = botInstallMac(getCookie(c, SESSION_COOKIE) ?? "", state, slug, issuedAt);
+    setCookie(c, DISCORD_BOT_STATE_COOKIE, `${state}.${slug}.${issuedAt}.${mac}`, {
+      httpOnly: true,
+      sameSite: "Lax",
+      secure,
+      path: DISCORD_STATE_COOKIE_PATH,
+      maxAge: STATE_TTL_SECONDS,
+    });
+    const authorize = new URL(DISCORD_AUTHORIZE_URL);
+    authorize.searchParams.set("client_id", discordApplicationId!);
+    authorize.searchParams.set("scope", DISCORD_BOT_SCOPE);
+    authorize.searchParams.set("permissions", DISCORD_BOT_PERMISSIONS);
+    authorize.searchParams.set("response_type", "code");
+    authorize.searchParams.set("redirect_uri", discordCallbackUrl);
+    authorize.searchParams.set("state", state);
+    return c.redirect(authorize.toString(), 302);
+  });
+
+  admin.get("/projects/:slug/discord/channels", requireDiscordBotInstall, async (c) => {
+    let result: ListDiscordChannelsResult;
+    try {
+      result = await listDiscordChannels(c.req.param("slug"));
+    } catch (error) {
+      console.error("Listing Discord channels failed:", error);
+      return c.json({ error: "discord_unavailable" }, 502);
+    }
+    switch (result.status) {
+      case "ok":
+        return c.json({ guildId: result.guildId, channels: result.channels });
+      case "project_not_found":
+        return c.json({ error: "project_not_found" }, 404);
+      case "discord_not_connected":
+        return c.json({ error: "discord_not_connected" }, 409);
+    }
+  });
+
+  admin.post("/projects/:slug/discord/channel", requireDiscordBotInstall, async (c) => {
+    const parsed = await readJsonBody(c);
+    if (!parsed.ok) return c.json({ error: "malformed_json" }, 400);
+
+    let result: SelectDiscordChannelResult;
+    try {
+      result = await selectDiscordChannel(c.req.param("slug"), parsed.body);
+    } catch (error) {
+      console.error("Selecting a Discord channel failed:", error);
+      return c.json({ error: "discord_unavailable" }, 502);
+    }
+    switch (result.status) {
+      case "saved":
+        return c.json({ project: result.project, warnings: result.warnings });
+      case "invalid":
+        return c.json({ error: "invalid_discord_channel_id" }, 400);
+      case "channel_not_in_guild":
+        return c.json({ error: "discord_channel_not_in_guild" }, 400);
+      case "project_not_found":
+        return c.json({ error: "project_not_found" }, 404);
+      case "discord_not_connected":
+        return c.json({ error: "discord_not_connected" }, 409);
+      case "channel_taken":
+        return c.json({ error: "discord_channel_taken", project: result.project }, 409);
     }
   });
 

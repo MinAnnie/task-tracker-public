@@ -55,6 +55,10 @@ const makeApp = (overrides: Partial<AppDeps> = {}) =>
     removeTaskDependency: async () => ({ status: "project_not_found" }),
     deleteTask: async () => ({ status: "project_not_found" }),
     discordApplicationId: undefined,
+    discordBotInstallEnabled: false,
+    completeDiscordBotInstall: async () => ({ status: "project_not_found" }),
+    listDiscordChannels: async () => ({ status: "project_not_found" }),
+    selectDiscordChannel: async () => ({ status: "project_not_found" }),
     completeDiscordLink: async () => ({ status: "already_linked" }),
     findDiscordAccount: async () => null,
     unlinkDiscordAccount: async () => {},
@@ -363,7 +367,12 @@ describe("GET /auth/me", () => {
       headers: { cookie: `${SESSION_COOKIE}=session-token` },
     });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ...user, discord: null, discordLinkingEnabled: false });
+    expect(await res.json()).toEqual({
+      ...user,
+      discord: null,
+      discordLinkingEnabled: false,
+      discordBotInstallEnabled: false,
+    });
     expect(find).toHaveBeenCalledWith("session-token");
   });
 
@@ -708,6 +717,9 @@ const adminSpies = () => ({
   listApiTokens: vi.fn(),
   createApiToken: vi.fn(),
   revokeApiToken: vi.fn(),
+  completeDiscordBotInstall: vi.fn(),
+  listDiscordChannels: vi.fn(),
+  selectDiscordChannel: vi.fn(),
 });
 
 describe("/api/admin authorization", () => {
@@ -727,6 +739,9 @@ describe("/api/admin authorization", () => {
     ["GET", "/api/admin/projects/shop/tokens", undefined],
     ["POST", "/api/admin/projects/shop/tokens", JSON.stringify({ name: "VPS" })],
     ["DELETE", "/api/admin/projects/shop/tokens/1", undefined],
+    ["GET", "/api/admin/projects/shop/discord/connect", undefined],
+    ["GET", "/api/admin/projects/shop/discord/channels", undefined],
+    ["POST", "/api/admin/projects/shop/discord/channel", JSON.stringify({ channelId: "333333333333333333" })],
   ] as const;
 
   it.each(routes)("%s %s returns 401 without a session", async (method, path, body) => {
@@ -2621,5 +2636,342 @@ describe("/api/account/tokens", () => {
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: "token_not_allowed" });
     expect(list).not.toHaveBeenCalled();
+  });
+});
+
+describe("Connect Discord (bot install)", () => {
+  const BOT_STATE_COOKIE = "discord_bot_install_state";
+  const GUILD = "111111111111111111";
+  const CHANNEL = "333333333333333333";
+  /** Admin app with linking and the bot install enabled (all three Discord variables set). */
+  const botApp = (overrides: Partial<AppDeps> = {}) =>
+    makeApp({ discordApplicationId: "1234", discordBotInstallEnabled: true, ...asUser(admin), ...overrides });
+  const withProject = { getProject: async () => ({ status: "found" as const, project: { ...project, repositories: [], members: [] } }) };
+
+  const connect = (app: ReturnType<typeof makeApp>, slug = "shop", session = "session-token") =>
+    app.request(`/api/admin/projects/${slug}/discord/connect`, { headers: { cookie: `${SESSION_COOKIE}=${session}` } });
+
+  /** Starts the flow, then lands on the shared callback with the cookies the browser would send. */
+  const roundTrip = async (
+    app: ReturnType<typeof makeApp>,
+    {
+      query = (state: string) => `code=the-code&state=${state}&guild_id=999999999999999999&permissions=3073`,
+      callbackSession = "session-token" as string | null,
+      tamper = (cookie: string) => cookie,
+      extraCookies = [] as string[],
+    } = {},
+  ) => {
+    const started = await connect(app);
+    const state = new URL(started.headers.get("location")!).searchParams.get("state")!;
+    const cookie = tamper(setCookies(started).get(BOT_STATE_COOKIE)!.value);
+    const cookies = [
+      ...(callbackSession === null ? [] : [`${SESSION_COOKIE}=${callbackSession}`]),
+      `${BOT_STATE_COOKIE}=${cookie}`,
+      ...extraCookies,
+    ];
+    return app.request(`/auth/discord/callback?${query(state)}`, { headers: { cookie: cookies.join("; ") } });
+  };
+
+  describe("GET /api/admin/projects/:slug/discord/connect", () => {
+    it("redirects to Discord's bot authorization on the existing callback URL", async () => {
+      const res = await connect(botApp(withProject));
+
+      expect(res.status).toBe(302);
+      const location = new URL(res.headers.get("location")!);
+      expect(location.origin + location.pathname).toBe("https://discord.com/oauth2/authorize");
+      expect(location.searchParams.get("client_id")).toBe("1234");
+      expect(location.searchParams.get("scope")).toBe("bot applications.commands");
+      expect(location.searchParams.get("permissions")).toBe("3073");
+      expect(location.searchParams.get("response_type")).toBe("code");
+      expect(location.searchParams.get("redirect_uri")).toBe("https://tasks.example.com/auth/discord/callback");
+      expect(location.searchParams.get("state")).toMatch(/^[A-Za-z0-9_-]{32,}$/);
+    });
+
+    it("keeps the state in its own short-lived HttpOnly cookie scoped to the callback, never the linking one", async () => {
+      const res = await connect(botApp(withProject));
+      const state = new URL(res.headers.get("location")!).searchParams.get("state")!;
+      const cookie = setCookies(res).get(BOT_STATE_COOKIE);
+
+      expect(cookie?.value).toContain(state);
+      expect(cookie?.attributes).toEqual(
+        expect.arrayContaining(["httponly", "samesite=lax", "secure", "max-age=600", "path=/auth/discord"]),
+      );
+      expect(setCookies(res).has(DISCORD_STATE_COOKIE)).toBe(false);
+    });
+
+    it("uses a fresh state every time", async () => {
+      const app = botApp(withProject);
+      const first = new URL((await connect(app)).headers.get("location")!).searchParams.get("state");
+      const second = new URL((await connect(app)).headers.get("location")!).searchParams.get("state");
+      expect(first).not.toBe(second);
+    });
+
+    it("answers 404 project_not_found for an unknown project, without a cookie", async () => {
+      const res = await connect(botApp());
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual({ error: "project_not_found" });
+      expect(setCookies(res).has(BOT_STATE_COOKIE)).toBe(false);
+    });
+
+    it("answers 404 discord_bot_install_disabled when it is not configured", async () => {
+      const res = await connect(botApp({ ...withProject, discordBotInstallEnabled: false }));
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual({ error: "discord_bot_install_disabled" });
+    });
+  });
+
+  describe("GET /auth/discord/callback (bot install)", () => {
+    const outcome = (res: Response) => res.headers.get("location");
+
+    it("stores the guild for the project and returns to its settings with connected", async () => {
+      const complete = vi.fn(async (_slug: string, _code: string) => ({
+        status: "connected" as const,
+        guild: { id: GUILD, name: "Acme" },
+      }));
+      const link = vi.fn();
+      const res = await roundTrip(botApp({ ...withProject, completeDiscordBotInstall: complete, completeDiscordLink: link }));
+
+      expect(res.status).toBe(302);
+      expect(outcome(res)).toBe("/admin/projects/shop?discordBot=connected");
+      // Only the slug from the signed cookie and the code: the guild_id query parameter is never trusted.
+      expect(complete).toHaveBeenCalledWith("shop", "the-code");
+      expect(link).not.toHaveBeenCalled();
+      expect(setCookies(res).get(BOT_STATE_COOKIE)?.attributes).toEqual(
+        expect.arrayContaining(["max-age=0", "path=/auth/discord"]),
+      );
+    });
+
+    it.each([
+      ["the state does not match", { query: () => "code=the-code&state=wrong" }],
+      ["the state is missing", { query: () => "code=the-code" }],
+      ["the code is missing", { query: (state: string) => `state=${state}` }],
+      ["the session changed", { callbackSession: "another-session" }],
+      ["the cookie's project was tampered with", { tamper: (cookie: string) => cookie.replace(".shop.", ".blog.") }],
+      ["the cookie is malformed", { tamper: () => "garbage" }],
+    ])("redirects with failed, without completing, when %s", async (_case, options) => {
+      const complete = vi.fn();
+      const res = await roundTrip(botApp({ ...withProject, completeDiscordBotInstall: complete }), options);
+      expect(res.status).toBe(302);
+      expect(outcome(res)).toMatch(/discordBot=failed$/);
+      expect(complete).not.toHaveBeenCalled();
+    });
+
+    it("redirects with failed when the state is older than ten minutes", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      try {
+        const complete = vi.fn();
+        const app = botApp({ ...withProject, completeDiscordBotInstall: complete });
+        const started = await connect(app);
+        const state = new URL(started.headers.get("location")!).searchParams.get("state")!;
+        const cookie = setCookies(started).get(BOT_STATE_COOKIE)!.value;
+        vi.setSystemTime(Date.now() + 11 * 60 * 1000);
+        const res = await app.request(`/auth/discord/callback?code=c&state=${state}`, {
+          headers: { cookie: `${SESSION_COOKIE}=session-token; ${BOT_STATE_COOKIE}=${cookie}` },
+        });
+        expect(outcome(res)).toBe("/admin/projects/shop?discordBot=failed");
+        expect(complete).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("redirects with failed when the user is no longer an admin", async () => {
+      const complete = vi.fn();
+      let user: AuthenticatedUser = admin;
+      const app = botApp({ ...withProject, completeDiscordBotInstall: complete, findSessionUser: async () => user });
+      const started = await connect(app);
+      const state = new URL(started.headers.get("location")!).searchParams.get("state")!;
+      const cookie = setCookies(started).get(BOT_STATE_COOKIE)!.value;
+      user = member;
+      const res = await app.request(`/auth/discord/callback?code=c&state=${state}`, {
+        headers: { cookie: `${SESSION_COOKIE}=session-token; ${BOT_STATE_COOKIE}=${cookie}` },
+      });
+      expect(outcome(res)).toBe("/admin/projects/shop?discordBot=failed");
+      expect(complete).not.toHaveBeenCalled();
+    });
+
+    it("redirects with cancelled when Discord reports an error", async () => {
+      const complete = vi.fn();
+      const res = await roundTrip(botApp({ ...withProject, completeDiscordBotInstall: complete }), {
+        query: (state) => `error=access_denied&state=${state}`,
+      });
+      expect(outcome(res)).toBe("/admin/projects/shop?discordBot=cancelled");
+      expect(complete).not.toHaveBeenCalled();
+    });
+
+    it("redirects with failed when the project is gone", async () => {
+      const res = await roundTrip(botApp({ ...withProject, completeDiscordBotInstall: async () => ({ status: "project_not_found" }) }));
+      expect(outcome(res)).toBe("/admin/projects/shop?discordBot=failed");
+    });
+
+    it("logs and redirects with failed when Discord refuses the code", async () => {
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+      const res = await roundTrip(
+        botApp({
+          ...withProject,
+          completeDiscordBotInstall: async () => {
+            throw new Error("Discord token exchange failed with status 400: invalid_grant");
+          },
+        }),
+      );
+      expect(outcome(res)).toBe("/admin/projects/shop?discordBot=failed");
+      expect(error).toHaveBeenCalled();
+      expect(JSON.stringify(error.mock.calls)).not.toContain("the-code");
+      error.mockRestore();
+    });
+
+    it("sends visitors without a session to the login page", async () => {
+      const complete = vi.fn();
+      const res = await roundTrip(botApp({ ...withProject, completeDiscordBotInstall: complete }), { callbackSession: null });
+      expect(outcome(res)).toBe("/login");
+      expect(complete).not.toHaveBeenCalled();
+    });
+
+    it("still links an account when the linking state matches, even with a stale bot-install cookie", async () => {
+      const complete = vi.fn();
+      const link = vi.fn(async (): Promise<CompleteDiscordLinkResult> => ({
+        status: "linked",
+        account: { id: "1", username: "Nelly" },
+      }));
+      const res = await roundTrip(botApp({ ...withProject, completeDiscordBotInstall: complete, completeDiscordLink: link }), {
+        query: () => "code=the-code&state=link-state",
+        extraCookies: [`${DISCORD_STATE_COOKIE}=link-state`],
+      });
+      expect(outcome(res)).toBe("/?discord=linked");
+      expect(link).toHaveBeenCalledWith(1, "the-code");
+      expect(complete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("GET /api/admin/projects/:slug/discord/channels", () => {
+    it("lists the connected guild's channels", async () => {
+      const channels = [{ id: CHANNEL, name: "general", type: 0, usedBy: { slug: "blog", name: "Blog" } }];
+      const list = vi.fn(async (_slug: string) => ({ status: "ok" as const, guildId: GUILD, channels }));
+      const res = await adminRequest(botApp({ listDiscordChannels: list }), "/api/admin/projects/shop/discord/channels");
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ guildId: GUILD, channels });
+      expect(list).toHaveBeenCalledWith("shop");
+    });
+
+    it.each([
+      [{ status: "project_not_found" as const }, 404, { error: "project_not_found" }],
+      [{ status: "discord_not_connected" as const }, 409, { error: "discord_not_connected" }],
+    ])("maps %j to %i", async (result, status, body) => {
+      const res = await adminRequest(botApp({ listDiscordChannels: async () => result }), "/api/admin/projects/shop/discord/channels");
+      expect(res.status).toBe(status);
+      expect(await res.json()).toEqual(body);
+    });
+
+    it("answers 502 discord_unavailable when Discord fails", async () => {
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+      const res = await adminRequest(
+        botApp({
+          listDiscordChannels: async () => {
+            throw new Error("Discord channel list failed with status 403");
+          },
+        }),
+        "/api/admin/projects/shop/discord/channels",
+      );
+      expect(res.status).toBe(502);
+      expect(await res.json()).toEqual({ error: "discord_unavailable" });
+      expect(error).toHaveBeenCalled();
+      error.mockRestore();
+    });
+
+    it("answers 404 discord_bot_install_disabled when it is not configured", async () => {
+      const list = vi.fn();
+      const res = await adminRequest(
+        botApp({ discordBotInstallEnabled: false, listDiscordChannels: list }),
+        "/api/admin/projects/shop/discord/channels",
+      );
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual({ error: "discord_bot_install_disabled" });
+      expect(list).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("POST /api/admin/projects/:slug/discord/channel", () => {
+    const select = (app: ReturnType<typeof makeApp>, options: Parameters<typeof adminRequest>[2] = {}) =>
+      adminRequest(app, "/api/admin/projects/shop/discord/channel", {
+        method: "POST",
+        body: JSON.stringify({ channelId: CHANNEL }),
+        ...options,
+      });
+
+    it("saves the channel and returns the project with any warnings", async () => {
+      const saved = { ...project, discordGuildId: GUILD, discordChannelId: CHANNEL };
+      const use = vi.fn(async (_slug: string, _body: unknown) => ({
+        status: "saved" as const,
+        project: saved,
+        warnings: ["invite_not_created" as const],
+      }));
+      const res = await select(botApp({ selectDiscordChannel: use }));
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({
+        project: { ...projectJson, discordGuildId: GUILD, discordChannelId: CHANNEL },
+        warnings: ["invite_not_created"],
+      });
+      expect(use).toHaveBeenCalledWith("shop", { channelId: CHANNEL });
+    });
+
+    it.each([
+      [{ status: "invalid" as const, field: "discordChannelId" as const }, 400, { error: "invalid_discord_channel_id" }],
+      [{ status: "channel_not_in_guild" as const }, 400, { error: "discord_channel_not_in_guild" }],
+      [{ status: "project_not_found" as const }, 404, { error: "project_not_found" }],
+      [{ status: "discord_not_connected" as const }, 409, { error: "discord_not_connected" }],
+      [
+        { status: "channel_taken" as const, project: { slug: "blog", name: "Blog" } },
+        409,
+        { error: "discord_channel_taken", project: { slug: "blog", name: "Blog" } },
+      ],
+    ])("maps %j to %i", async (result, status, body) => {
+      const res = await select(botApp({ selectDiscordChannel: async () => result }));
+      expect(res.status).toBe(status);
+      expect(await res.json()).toEqual(body);
+    });
+
+    it("answers 502 discord_unavailable when Discord fails", async () => {
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+      const res = await select(
+        botApp({
+          selectDiscordChannel: async () => {
+            throw new Error("Discord channel list failed with status 500");
+          },
+        }),
+      );
+      expect(res.status).toBe(502);
+      expect(await res.json()).toEqual({ error: "discord_unavailable" });
+      error.mockRestore();
+    });
+
+    it("answers 400 malformed_json for a broken body", async () => {
+      const res = await select(botApp(), { body: "{" });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: "malformed_json" });
+    });
+
+    it.each([
+      ["a foreign Origin", { origin: "https://evil.example" }, 403, "invalid_origin"],
+      ["a non-JSON body", { contentType: "text/plain" }, 415, "unsupported_media_type"],
+    ])("refuses %s", async (_case, options, status, error) => {
+      const use = vi.fn();
+      const res = await select(botApp({ selectDiscordChannel: use }), options);
+      expect(res.status).toBe(status);
+      expect(await res.json()).toEqual({ error });
+      expect(use).not.toHaveBeenCalled();
+    });
+
+    it("answers 404 discord_bot_install_disabled when it is not configured", async () => {
+      const use = vi.fn();
+      const res = await select(botApp({ discordBotInstallEnabled: false, selectDiscordChannel: use }));
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual({ error: "discord_bot_install_disabled" });
+      expect(use).not.toHaveBeenCalled();
+    });
+  });
+
+  it("GET /auth/me tells whether Connect Discord is available", async () => {
+    const res = await botApp().request("/auth/me", { headers: { cookie: `${SESSION_COOKIE}=session-token` } });
+    expect(await res.json()).toEqual(expect.objectContaining({ discordBotInstallEnabled: true }));
   });
 });
