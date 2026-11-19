@@ -6,6 +6,7 @@ export { normalizeGithubLogin } from "./github-login.ts";
 export { resolveRole, ROLES, type Role } from "./resolve-role.ts";
 export {
   normalizeDiscordChannelId,
+  normalizeDiscordGuildId,
   normalizeProjectName,
   normalizeProjectSlug,
   normalizeRepositoryFullName,
@@ -41,3 +42,4 @@ export {
   type ApiTokenScope,
   type ApiTokenStatus,
 } from "./api-token.ts";
+export { selectableDiscordChannels, type DiscordChannel } from "./discord-channels.ts";
