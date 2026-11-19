@@ -20,6 +20,7 @@ export default defineConfig({
       "/api": apiServer,
       "/auth": apiServer,
       "/webhooks": apiServer,
+      "/mcp": apiServer,
     },
   },
 });

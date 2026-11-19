@@ -1,5 +1,7 @@
 import { useId, useState, type FormEvent, type ReactNode } from "react";
+import { Link } from "react-router";
 import type { ApiToken, ApiTokenScope, NewApiTokenInput } from "../../api/types.ts";
+import { paths } from "../../lib/paths.ts";
 import buttons from "../../ui/Button.module.css";
 import styles from "./Admin.module.css";
 import {
@@ -122,6 +124,9 @@ export function ApiTokensSection({
           API tokens
         </h2>
         <p className={styles.cardHint}>{hint}</p>
+        <p className={styles.cardHint}>
+          Use a token with Claude, Copilot, Cursor and other AI tools: <Link to={paths.connectAi}>Connect your AI</Link>
+        </p>
       </div>
       {list}
       <form className={styles.inlineForm} onSubmit={submit} noValidate>

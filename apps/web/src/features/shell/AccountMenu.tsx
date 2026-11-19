@@ -15,7 +15,7 @@ interface AccountMenuProps {
 }
 
 /**
- * Disclosure with the account name, the personal API tokens page, the Discord
+ * Disclosure with the account name, the personal API tokens and Connect your AI pages, the Discord
  * connection (when the server supports linking) and "Sign out"; closes on Escape or an outside click.
  */
 export function AccountMenu({ user, onLogout, loggingOut, onDisconnectDiscord, disconnectingDiscord }: AccountMenuProps) {
@@ -63,6 +63,9 @@ export function AccountMenu({ user, onLogout, loggingOut, onDisconnectDiscord, d
           </p>
           <Link to={paths.accountTokens} className={styles.signOut} onClick={() => setOpen(false)}>
             API tokens
+          </Link>
+          <Link to={paths.connectAi} className={styles.signOut} onClick={() => setOpen(false)}>
+            Connect your AI
           </Link>
           {user.discordLinkingEnabled &&
             (user.discord ? (

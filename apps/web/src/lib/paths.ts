@@ -6,6 +6,7 @@ export const paths = {
   adminMembers: "/admin/members",
   adminProjects: "/admin/projects",
   accountTokens: "/account/tokens",
+  connectAi: "/account/ai",
   adminProject: (slug: string) => `/admin/projects/${encodeURIComponent(slug)}`,
   board: (slug: string) => `/projects/${encodeURIComponent(slug)}`,
   task: (slug: string, key: string) => `/projects/${encodeURIComponent(slug)}/tasks/${encodeURIComponent(key)}`,
