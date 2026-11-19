@@ -78,6 +78,7 @@ const makeApp = (overrides: Partial<AppDeps> = {}) =>
     listPersonalApiTokens: async () => [],
     createPersonalApiToken: async () => ({ status: "invalid", field: "body" }),
     revokePersonalApiToken: async () => ({ status: "token_not_found" }),
+    handleMcpRequest: async () => new Response(null, { status: 202 }),
     ...overrides,
   });
 
@@ -2973,5 +2974,170 @@ describe("Connect Discord (bot install)", () => {
   it("GET /auth/me tells whether Connect Discord is available", async () => {
     const res = await botApp().request("/auth/me", { headers: { cookie: `${SESSION_COOKIE}=session-token` } });
     expect(await res.json()).toEqual(expect.objectContaining({ discordBotInstallEnabled: true }));
+  });
+});
+
+describe("/mcp (remote MCP endpoint)", () => {
+  const initialize = JSON.stringify({
+    jsonrpc: "2.0",
+    id: 1,
+    method: "initialize",
+    params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } },
+  });
+  const ping = (id: number) => ({ jsonrpc: "2.0", id, method: "ping" });
+
+  const post = (
+    app: ReturnType<typeof makeApp>,
+    { body = initialize, authorization = `Bearer ${API_TOKEN}` as string | null, cookie = false } = {},
+  ) => {
+    const headers: Record<string, string> = {
+      "content-type": "application/json",
+      accept: "application/json, text/event-stream",
+    };
+    if (authorization !== null) headers.authorization = authorization;
+    if (cookie) headers.cookie = `${SESSION_COOKIE}=session-token`;
+    return app.request("/mcp", { method: "POST", headers, body });
+  };
+
+  const mcpOk = () => vi.fn(async () => Response.json({ jsonrpc: "2.0", id: 1, result: {} }));
+
+  it("hands the authenticated token, the request and the parsed body to the MCP handler", async () => {
+    const handleMcpRequest = mcpOk();
+    const app = makeApp({ ...withToken(), handleMcpRequest });
+
+    const res = await post(app);
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ jsonrpc: "2.0", id: 1, result: {} });
+    expect(handleMcpRequest).toHaveBeenCalledOnce();
+    const [caller, request, body] = handleMcpRequest.mock.calls[0] as unknown as [unknown, Request, unknown];
+    expect(caller).toBe(tokenCaller);
+    expect(request.url).toBe("http://localhost/mcp");
+    expect(body).toEqual(JSON.parse(initialize));
+  });
+
+  it.each([null, `Bearer ttk_${"z".repeat(43)}`, "Bearer", `Basic ${API_TOKEN}`, "Bearer a b"])(
+    "answers 401 with WWW-Authenticate: Bearer for the authorization %j",
+    async (authorization) => {
+      const handleMcpRequest = mcpOk();
+      const app = makeApp({ ...withToken(), handleMcpRequest });
+
+      const res = await post(app, { authorization });
+
+      expect(res.status).toBe(401);
+      expect(res.headers.get("www-authenticate")).toBe("Bearer");
+      expect(await res.json()).toEqual({ error: "invalid_token" });
+      expect(handleMcpRequest).not.toHaveBeenCalled();
+    },
+  );
+
+  it("never accepts the session cookie: a signed-in browser without a token gets 401", async () => {
+    const find = vi.fn(async () => admin);
+    const handleMcpRequest = mcpOk();
+    const app = makeApp({ ...withToken(), findSessionUser: find, handleMcpRequest });
+
+    const res = await post(app, { authorization: null, cookie: true });
+
+    expect(res.status).toBe(401);
+    expect(find).not.toHaveBeenCalled();
+    expect(handleMcpRequest).not.toHaveBeenCalled();
+  });
+
+  it("skips the cookie API's Origin check (bearer only)", async () => {
+    const res = await post(makeApp({ ...withToken(), handleMcpRequest: mcpOk() }));
+    expect(res.status).toBe(200);
+  });
+
+  it.each(["GET", "DELETE"])("answers %s with 405 and Allow: POST (stateless server, no SSE stream)", async (method) => {
+    const handleMcpRequest = mcpOk();
+    const app = makeApp({ ...withToken(), handleMcpRequest });
+
+    const res = await app.request("/mcp", { method, headers: { authorization: `Bearer ${API_TOKEN}` } });
+
+    expect(res.status).toBe(405);
+    expect(res.headers.get("allow")).toBe("POST");
+    expect(handleMcpRequest).not.toHaveBeenCalled();
+  });
+
+  it("answers 405 to GET /mcp even when the web app is served (no SPA fallback)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "web-dist-"));
+    try {
+      writeFileSync(join(dir, "index.html"), "<!doctype html><title>app</title>");
+      const res = await makeApp({ webDistDir: dir }).request("/mcp");
+      expect(res.status).toBe(405);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses bodies over the size limit with 413 before authenticating", async () => {
+    const authenticateApiToken = vi.fn(async () => tokenCaller);
+    const handleMcpRequest = mcpOk();
+    const app = makeApp({ authenticateApiToken, handleMcpRequest });
+
+    const res = await post(app, { body: JSON.stringify({ ...ping(1), params: { pad: "x".repeat(300 * 1024) } }) });
+
+    expect(res.status).toBe(413);
+    expect(authenticateApiToken).not.toHaveBeenCalled();
+    expect(handleMcpRequest).not.toHaveBeenCalled();
+  });
+
+  it("answers a JSON-RPC parse error for malformed JSON", async () => {
+    const handleMcpRequest = mcpOk();
+    const res = await post(makeApp({ ...withToken(), handleMcpRequest }), { body: "{nope" });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ jsonrpc: "2.0", error: { code: -32700 }, id: null });
+    expect(handleMcpRequest).not.toHaveBeenCalled();
+  });
+
+  it("refuses JSON-RPC batches of more than 10 messages", async () => {
+    const handleMcpRequest = mcpOk();
+    const body = JSON.stringify(Array.from({ length: 11 }, (_, i) => ping(i)));
+    const res = await post(makeApp({ ...withToken(), handleMcpRequest }), { body });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: { code: -32600 } });
+    expect(handleMcpRequest).not.toHaveBeenCalled();
+  });
+
+  it("shares the token's rate limit with the REST API, counting each batched message", async () => {
+    const limiter = createInMemoryRateLimiter({ limit: 3, windowMs: 60_000 });
+    const handleMcpRequest = mcpOk();
+    const app = makeApp({
+      ...withToken(),
+      handleMcpRequest,
+      rateLimitApiToken: (tokenId) => limiter.hit(String(tokenId)),
+    });
+
+    expect((await post(app, { body: JSON.stringify([ping(1), ping(2)]) })).status).toBe(200);
+    expect((await bearerRequest(app, "/api/projects")).status).toBe(200);
+    const limited = await post(app);
+
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("retry-after")).toMatch(/^\d+$/);
+    expect(await limited.json()).toEqual({ error: "rate_limited" });
+    expect(handleMcpRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it("answers a JSON-RPC internal error without logging the token or the body", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const app = makeApp({
+        ...withToken(),
+        handleMcpRequest: async () => {
+          throw new Error("database is down");
+        },
+      });
+
+      const res = await post(app, { body: JSON.stringify({ ...ping(1), params: { secret: "body-secret" } }) });
+
+      expect(res.status).toBe(500);
+      expect(await res.json()).toMatchObject({ jsonrpc: "2.0", error: { code: -32603 }, id: null });
+      const logged = JSON.stringify(error.mock.calls);
+      expect(logged).toContain("database is down");
+      expect(logged).not.toContain(API_TOKEN);
+      expect(logged).not.toContain("body-secret");
+    } finally {
+      error.mockRestore();
+    }
   });
 });

@@ -238,6 +238,7 @@ describe("OpenAPI document", () => {
       createStage: unused,
       updateStage: unused,
       deleteStage: unused,
+      handleMcpRequest: unused,
     } satisfies AppDeps);
   });
 

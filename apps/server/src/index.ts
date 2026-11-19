@@ -59,6 +59,7 @@ import { createDrizzlePullRequestWebhookStore } from "./infrastructure/drizzle-p
 import { createDrizzleStageStore } from "./infrastructure/drizzle-stage-store.ts";
 import { createDrizzleTaskStore } from "./infrastructure/drizzle-task-store.ts";
 import { createGithubOAuthHttpClient } from "./infrastructure/github-oauth-http-client.ts";
+import { createMcpRequestHandler } from "./mcp/mcp-endpoint.ts";
 import { createDiscordInteractionHandler } from "./webhooks/discord/handle-interaction.ts";
 
 const config = loadConfig();
@@ -127,6 +128,19 @@ const handleDiscordInteraction = createDiscordInteractionHandler({
   releaseTask: (user, slug, key) => releaseTask(tasksDeps, user, slug, key),
 });
 console.log(`Discord slash commands ${config.discordPublicKey ? "enabled" : "disabled"}.`);
+// The remote MCP endpoint runs the stdio server's tools in-process, as the request's API token.
+const handleMcpRequest = createMcpRequestHandler({
+  appBaseUrl: config.appBaseUrl,
+  listVisibleProjects: (user) => listVisibleProjects(projectsDeps, user),
+  listTasks: (viewer, slug) => listTasks(tasksDeps, viewer, slug),
+  getTask: (viewer, slug, key) => getTask(tasksDeps, viewer, slug, key),
+  createTask: (user, slug, body) => createTask(tasksDeps, user, slug, body),
+  updateTask: (user, slug, key, body) => updateTask(tasksDeps, user, slug, key, body),
+  addTaskDependency: (user, slug, key, dependsOnKey) => addTaskDependency(tasksDeps, user, slug, key, dependsOnKey),
+  removeTaskDependency: (user, slug, key, dependsOnKey) =>
+    removeTaskDependency(tasksDeps, user, slug, key, dependsOnKey),
+  resolveApiTokenActor: (caller) => resolveApiTokenActor(apiTokensDeps, caller),
+});
 
 const app = createApp({
   checkDatabase: async () => {
@@ -197,6 +211,7 @@ const app = createApp({
   createStage: (slug, body) => createStage(stagesDeps, slug, body),
   updateStage: (slug, stageId, body) => updateStage(stagesDeps, slug, stageId, body),
   deleteStage: (slug, stageId) => deleteStage(stagesDeps, slug, stageId),
+  handleMcpRequest,
 });
 
 /**

@@ -199,6 +199,11 @@ export interface AppDeps {
   updateStage: (slug: string, stageId: string, body: unknown) => Promise<UpdateStageResult>;
   /** Deletes a stage no task uses; `stageId` is the untrusted path segment. */
   deleteStage: (slug: string, stageId: string) => Promise<DeleteStageResult>;
+  /**
+   * Answers one stateless MCP Streamable HTTP request (`POST /mcp`) for an authenticated,
+   * rate-limited API token. `body` is the parsed JSON-RPC message (or batch).
+   */
+  handleMcpRequest: (caller: ApiTokenCaller, request: Request, body: unknown) => Promise<Response>;
 }
 
 /** Who reads a token-readable route: the signed-in user or an API token. */
@@ -257,6 +262,19 @@ const SESSION_COOKIE = "session";
 const STATE_COOKIE = "oauth_state";
 const STATE_COOKIE_PATH = "/auth/github";
 const STATE_TTL_SECONDS = 10 * 60;
+/**
+ * Upper bound of a `POST /mcp` body: a JSON-RPC call with a 10,000-character description
+ * stays far below it even with every character escaped.
+ */
+const MCP_MAX_BYTES = 256 * 1024;
+/** JSON-RPC messages accepted in one `POST /mcp` batch; each counts against the token's rate limit. */
+const MCP_MAX_BATCH = 10;
+
+/** A JSON-RPC error answer with no request id, as the MCP transport sends for transport-level failures. */
+function jsonRpcError(c: Context, status: 400 | 405 | 413 | 500, code: number, message: string) {
+  return c.json({ jsonrpc: "2.0", error: { code, message }, id: null }, status);
+}
+
 /** Interactions are small JSON documents; anything larger is not from Discord. */
 const DISCORD_INTERACTION_MAX_BYTES = 64 * 1024;
 const DISCORD_INTERACTION_FAILED: DiscordInteractionResponse = {
@@ -395,6 +413,7 @@ export function createApp({
   createStage,
   updateStage,
   deleteStage,
+  handleMcpRequest,
 }: AppDeps): Hono {
   const app = new Hono();
   const callbackUrl = new URL("/auth/github/callback", appBaseUrl).toString();
@@ -1248,6 +1267,59 @@ export function createApp({
     const result = await listProjectStages(c.get("viewer"), c.req.param("slug"));
     return result.status === "ok" ? c.json(result.stages) : taskFailure(c, result);
   });
+
+  // Remote MCP server (Streamable HTTP, stateless): API tokens only, never the session
+  // cookie, so it sits outside the cookie API's Origin/CSRF guards. No SSE stream is
+  // offered and there are no sessions to end, so GET and DELETE answer 405.
+  app.on(["GET", "DELETE"], "/mcp", (c) => {
+    c.header("Allow", "POST");
+    return jsonRpcError(c, 405, -32000, "Method not allowed.");
+  });
+
+  app.post(
+    "/mcp",
+    bodyLimit({
+      maxSize: MCP_MAX_BYTES,
+      onError: (c) => jsonRpcError(c, 413, -32000, "Request body too large."),
+    }),
+    async (c) => {
+      const authorization = c.req.header("authorization");
+      if (authorization === undefined) {
+        c.header("WWW-Authenticate", "Bearer");
+        return c.json({ error: "invalid_token" }, 401);
+      }
+      const authenticated = await authenticateBearer(c, authorization);
+      if (!authenticated.ok) return authenticated.response;
+      const { caller } = authenticated;
+
+      let body: unknown;
+      try {
+        body = JSON.parse(await c.req.text());
+      } catch {
+        return jsonRpcError(c, 400, -32700, "Parse error: Invalid JSON");
+      }
+      const messages = Array.isArray(body) ? body.length : 1;
+      if (messages > MCP_MAX_BATCH) {
+        return jsonRpcError(c, 400, -32600, `Invalid Request: Batch must not exceed ${MCP_MAX_BATCH} messages`);
+      }
+      // authenticateBearer counted the first message; every other one in a batch counts too.
+      for (let extra = 1; extra < messages; extra += 1) {
+        const limit = rateLimitApiToken(caller.tokenId);
+        if (!limit.allowed) {
+          c.header("Retry-After", String(limit.retryAfterSeconds));
+          return c.json({ error: "rate_limited" }, 429);
+        }
+      }
+
+      try {
+        return await handleMcpRequest(caller, c.req.raw, body);
+      } catch (error) {
+        // Only the message: never the request (its headers carry the token) or its body.
+        console.error(`MCP request failed: ${error instanceof Error ? error.message : String(error)}`);
+        return jsonRpcError(c, 500, -32603, "Internal error");
+      }
+    },
+  );
 
   if (webDistDir !== undefined && existsSync(webDistDir)) {
     app.use("/*", serveStatic({ root: webDistDir }));

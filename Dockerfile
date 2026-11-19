@@ -15,19 +15,20 @@ COPY apps/web/package.json apps/web/
 COPY apps/mcp/package.json apps/mcp/
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
 
-# Build server (tsc -> dist) and web (vite -> dist).
+# Build mcp and server (tsc -> dist) and web (vite -> dist).
 FROM deps AS build
 COPY . .
 RUN pnpm build
 
-# Production-only dependencies for the server.
+# Production-only dependencies for the server and the workspace packages it uses
+# (`...` includes @task-tracker/mcp, whose tools the remote /mcp endpoint serves).
 FROM base AS prod-deps
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/server/package.json apps/server/
 COPY apps/web/package.json apps/web/
 COPY apps/mcp/package.json apps/mcp/
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
-    pnpm install --frozen-lockfile --prod --filter @task-tracker/server
+    pnpm install --frozen-lockfile --prod --filter "@task-tracker/server..."
 
 FROM node:24-alpine AS runtime
 ENV NODE_ENV=production \
@@ -39,6 +40,9 @@ COPY --from=prod-deps /app/apps/server/node_modules ./apps/server/node_modules
 COPY --from=build /app/apps/server/package.json ./apps/server/package.json
 COPY --from=build /app/apps/server/dist ./apps/server/dist
 COPY --from=build /app/apps/server/drizzle ./apps/server/drizzle
+COPY --from=prod-deps /app/apps/mcp/node_modules ./apps/mcp/node_modules
+COPY --from=build /app/apps/mcp/package.json ./apps/mcp/package.json
+COPY --from=build /app/apps/mcp/dist ./apps/mcp/dist
 COPY --from=build /app/apps/web/dist ./apps/web/dist
 USER node
 WORKDIR /app/apps/server

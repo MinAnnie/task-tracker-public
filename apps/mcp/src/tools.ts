@@ -70,7 +70,8 @@ const fail = (text: string): ToolResult => ({ content: [{ type: "text", text }],
 
 export function createToolHandlers({ client, config }: ToolDeps) {
   async function run(work: (client: TrackerClient, apiUrl: string) => Promise<string>): Promise<ToolResult> {
-    if (config.token === undefined) return fail(MISSING_TOKEN_MESSAGE);
+    // A host may hand over an in-process client with no token of its own (the remote /mcp endpoint).
+    if (client === undefined && config.token === undefined) return fail(MISSING_TOKEN_MESSAGE);
     if (config.apiUrl === undefined) return fail(MISSING_API_URL_MESSAGE);
     if (client === undefined) return fail(MISSING_TOKEN_MESSAGE);
     try {

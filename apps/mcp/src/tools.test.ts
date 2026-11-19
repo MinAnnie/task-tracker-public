@@ -58,6 +58,16 @@ describe("without a token", () => {
   });
 });
 
+describe("with a client handed over by a host", () => {
+  it("runs without a token of its own (the remote endpoint's in-process client)", async () => {
+    const client = fakeClient();
+    const tools = createToolHandlers({ client, config: { ...config, token: undefined } });
+    const result = await tools.listProjects();
+    expect(result.isError).toBeUndefined();
+    expect(client.listProjects).toHaveBeenCalled();
+  });
+});
+
 describe("without an API URL", () => {
   it("every tool answers an isError result without calling the API", async () => {
     const client = fakeClient();
