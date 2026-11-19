@@ -95,6 +95,7 @@ export class InMemoryProjectStore implements ProjectStore {
     const stored: StoredProject = {
       ...project,
       discordInviteUrl: project.discordInviteUrl ?? null,
+      discordGuildId: project.discordGuildId ?? null,
       id: this.nextId++,
       createdAt: this.now(),
       nextTaskNumber: 1,

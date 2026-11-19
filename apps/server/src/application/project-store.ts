@@ -9,6 +9,8 @@ export interface ProjectRecord {
   discordChannelId: string | null;
   /** Discord server invite shown to the project participants. */
   discordInviteUrl: string | null;
+  /** Discord server the bot was installed in from the project settings ("Connect Discord"). */
+  discordGuildId: string | null;
   createdAt: Date;
 }
 
@@ -49,6 +51,8 @@ export interface NewProject {
   discordChannelId: string | null;
   /** Defaults to `null` (no invite). */
   discordInviteUrl?: string | null;
+  /** Defaults to `null` (not connected). Only set by the "Connect Discord" flow. */
+  discordGuildId?: string | null;
 }
 
 export type ProjectChanges = Partial<NewProject>;

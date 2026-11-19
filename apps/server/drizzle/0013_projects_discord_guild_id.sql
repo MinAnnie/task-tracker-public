@@ -1,0 +1,1 @@
+ALTER TABLE "projects" ADD COLUMN "discord_guild_id" text;

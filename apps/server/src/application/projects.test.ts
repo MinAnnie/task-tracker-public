@@ -112,8 +112,22 @@ describe("projects", () => {
           taskKeyPrefix: "RF",
           discordChannelId: CHANNEL,
           discordInviteUrl: INVITE,
+          discordGuildId: null,
           createdAt,
         },
+      });
+    });
+
+    it("never takes the Discord server from the body: only Connect Discord sets it", async () => {
+      const result = await createProject(deps, {
+        name: "Shop",
+        slug: "shop",
+        taskKeyPrefix: "RF",
+        discordGuildId: "123456789012345678",
+      });
+      expect(result).toMatchObject({ status: "created", project: { discordGuildId: null } });
+      expect(await updateProject(deps, "shop", { discordGuildId: "123456789012345678" })).toEqual({
+        status: "empty_update",
       });
     });
 

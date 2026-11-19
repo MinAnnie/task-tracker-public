@@ -5,7 +5,7 @@ const PROJECT_SLUG = /^[a-z0-9](?:[a-z0-9]|-(?=[a-z0-9])){0,49}$/i;
 const PROJECT_NAME_MAX_LENGTH = 100;
 /** 1–10 letters or digits, starting with a letter (task keys look like `RF-14`). */
 const TASK_KEY_PREFIX = /^[A-Z][A-Z0-9]{0,9}$/i;
-/** Discord snowflake ids are 17–20 decimal digits. */
+/** Discord snowflake ids (channels, servers) are 17–20 decimal digits. */
 const DISCORD_CHANNEL_ID = /^[0-9]{17,20}$/;
 /** Longest Discord invite URL accepted. */
 const DISCORD_INVITE_URL_MAX_LENGTH = 200;
@@ -42,6 +42,11 @@ export function normalizeTaskKeyPrefix(value: unknown): string | undefined {
  */
 export function normalizeDiscordChannelId(value: unknown): string | null | undefined {
   if (value === null) return null;
+  return typeof value === "string" && DISCORD_CHANNEL_ID.test(value) ? value : undefined;
+}
+
+/** Returns `value` when it is a Discord server (guild) id, a 17–20 digit snowflake; `undefined` otherwise. */
+export function normalizeDiscordGuildId(value: unknown): string | undefined {
   return typeof value === "string" && DISCORD_CHANNEL_ID.test(value) ? value : undefined;
 }
 

@@ -76,6 +76,7 @@ describe("createDrizzleProjectStore (Postgres)", () => {
           taskKeyPrefix: "RF",
           discordChannelId: "123456789012345678",
           discordInviteUrl: null,
+          discordGuildId: null,
           createdAt: expect.any(Date),
         },
       });
@@ -160,6 +161,18 @@ describe("createDrizzleProjectStore (Postgres)", () => {
         { id: expect.any(Number), slug: "blog", name: "BLOG", taskKeyPrefix: "BL", discordInviteUrl: null },
         { id: shop.id, slug: "shop", name: "SHOP", taskKeyPrefix: "RF", discordInviteUrl: invite },
       ]);
+    });
+
+    it("stores the connected Discord server", async () => {
+      const shop = await seedProject("shop", "RF");
+      const guild = "123456789012345678";
+
+      expect(await store.updateProject(shop.id, { discordGuildId: guild })).toEqual({
+        status: "saved",
+        project: { ...shop, discordGuildId: guild },
+      });
+      expect(await store.findProjectBySlug("shop")).toEqual(expect.objectContaining({ discordGuildId: guild }));
+      expect(await store.listProjects()).toEqual([expect.objectContaining({ discordGuildId: guild })]);
     });
 
     it("lists projects with counts, ordered by slug", async () => {

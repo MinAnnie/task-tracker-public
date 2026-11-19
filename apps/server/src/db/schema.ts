@@ -36,6 +36,8 @@ export const projects = pgTable(
     discordChannelId: text("discord_channel_id"),
     /** Discord server invite (https://discord.gg/… or https://discord.com/invite/…). */
     discordInviteUrl: text("discord_invite_url"),
+    /** Discord server the bot was installed in through "Connect Discord" (a snowflake). */
+    discordGuildId: text("discord_guild_id"),
     createdAt: createdAt(),
   },
   (t) => [

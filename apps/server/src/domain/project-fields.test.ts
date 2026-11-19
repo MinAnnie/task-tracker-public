@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   normalizeDiscordChannelId,
+  normalizeDiscordGuildId,
   normalizeDiscordInviteUrl,
   normalizeProjectName,
   normalizeProjectSlug,
@@ -168,4 +169,17 @@ describe("normalizeRepositoryFullName", () => {
   it("rejects non-string values", () => {
     for (const value of NON_STRINGS) expect(normalizeRepositoryFullName(value)).toBeUndefined();
   });
+});
+
+describe("normalizeDiscordGuildId", () => {
+  it.each([["1".repeat(17)], ["1".repeat(20)], ["123456789012345678"]])("accepts %j", (input) => {
+    expect(normalizeDiscordGuildId(input)).toBe(input);
+  });
+
+  it.each([[""], [null], ["1".repeat(16)], ["1".repeat(21)], ["12345678901234567a"], [" 123456789012345678"], [undefined], [123456789012345678], [{}]])(
+    "rejects %j",
+    (input) => {
+      expect(normalizeDiscordGuildId(input)).toBeUndefined();
+    },
+  );
 });

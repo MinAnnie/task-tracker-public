@@ -16,6 +16,7 @@ const projectColumns = {
   taskKeyPrefix: projects.taskKeyPrefix,
   discordChannelId: projects.discordChannelId,
   discordInviteUrl: projects.discordInviteUrl,
+  discordGuildId: projects.discordGuildId,
   createdAt: projects.createdAt,
 };
 
