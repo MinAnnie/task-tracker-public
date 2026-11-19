@@ -16,6 +16,7 @@ export const me: CurrentUser = {
   role: "member",
   discord: null,
   discordLinkingEnabled: false,
+  discordBotInstallEnabled: false,
 };
 
 export const admin: CurrentUser = { ...me, id: 2, githubLogin: "boss", name: "The Boss", role: "admin" };
@@ -79,6 +80,7 @@ export const adminProjects: AdminProjectSummary[] = [
     taskKeyPrefix: "RF",
     discordChannelId: "1234567890123456789",
     discordInviteUrl: "https://discord.gg/acme",
+    discordGuildId: null,
     createdAt: "2026-10-01T15:00:00.000Z",
     repositoryCount: 2,
     taskCount: 7,
@@ -91,6 +93,7 @@ export const adminProjects: AdminProjectSummary[] = [
     taskKeyPrefix: "LD",
     discordChannelId: null,
     discordInviteUrl: null,
+    discordGuildId: null,
     createdAt: "2026-10-02T15:00:00.000Z",
     repositoryCount: 1,
     taskCount: 0,
@@ -106,6 +109,7 @@ export function adminProjectDetail(overrides: Partial<AdminProjectDetail> = {}):
     taskKeyPrefix: "RF",
     discordChannelId: "1234567890123456789",
     discordInviteUrl: "https://discord.gg/acme",
+    discordGuildId: null,
     createdAt: "2026-10-01T15:00:00.000Z",
     repositories: [{ fullName: "acme/app-web", githubInstallationId: null }],
     members: [{ githubLogin: "juanperez", createdAt: "2026-10-09T15:00:00.000Z" }],

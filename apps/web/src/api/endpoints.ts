@@ -8,6 +8,7 @@ import type {
   BoardTask,
   CreatedApiToken,
   CurrentUser,
+  DiscordChannelList,
   MembersOverview,
   NewApiTokenInput,
   NewProjectInput,
@@ -17,6 +18,7 @@ import type {
   ProjectChanges,
   ProjectMember,
   ProjectRepository,
+  SelectedDiscordChannel,
   Stage,
   StageChanges,
   TaskChanges,
@@ -116,6 +118,15 @@ export const addProjectMember = (slug: string, githubLogin: string) =>
 
 export const removeProjectMember = (slug: string, githubLogin: string) =>
   apiRequest<void>(`${adminProjectPath(slug)}/members/${encodeURIComponent(githubLogin)}`, { method: "DELETE" });
+
+/** Full-page navigation target: the server redirects to Discord and back to the project settings with `?discordBot=<outcome>`. */
+export const connectDiscordBotUrl = (slug: string) => `${adminProjectPath(slug)}/discord/connect`;
+
+export const fetchDiscordChannels = (slug: string) =>
+  apiRequest<DiscordChannelList>(`${adminProjectPath(slug)}/discord/channels`);
+
+export const selectDiscordChannel = (slug: string, channelId: string) =>
+  apiRequest<SelectedDiscordChannel>(`${adminProjectPath(slug)}/discord/channel`, { method: "POST", body: { channelId } });
 
 export const fetchApiTokens = (slug: string) => apiRequest<ApiToken[]>(`${adminProjectPath(slug)}/tokens`);
 

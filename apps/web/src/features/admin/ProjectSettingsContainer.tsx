@@ -5,6 +5,7 @@ import {
   useAddProjectRepository,
   useAdminMembers,
   useAdminProject,
+  useCurrentUser,
   useDeleteProject,
   useRemoveProjectMember,
   useRemoveProjectRepository,
@@ -21,6 +22,7 @@ import { StatusMessage } from "../../ui/StatusMessage.tsx";
 import styles from "./Admin.module.css";
 import { projectFailure } from "./admin-model.ts";
 import { ApiTokensContainer } from "./ApiTokensContainer.tsx";
+import { DiscordContainer } from "./DiscordContainer.tsx";
 import { GeneralForm } from "./GeneralForm.tsx";
 import { ProjectMembersSection } from "./ProjectMembersSection.tsx";
 import { RepositoriesSection } from "./RepositoriesSection.tsx";
@@ -56,6 +58,7 @@ export function ProjectSettingsContainer() {
 function ProjectSettings({ project }: { project: AdminProjectDetail }) {
   const { slug } = project;
   const navigate = useNavigate();
+  const discordBotInstallEnabled = useCurrentUser().data?.discordBotInstallEnabled ?? false;
   const update = useUpdateProject(slug);
   const appMembers = useAdminMembers();
   const addMember = useAddProjectMember(slug);
@@ -105,6 +108,8 @@ function ProjectSettings({ project }: { project: AdminProjectDetail }) {
           if (update.isError) update.reset();
         }}
       />
+
+      {discordBotInstallEnabled && <DiscordContainer project={project} />}
 
       <StagesContainer slug={slug} />
 

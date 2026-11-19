@@ -2,7 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { AppRoutes } from "../../app/AppRoutes.tsx";
-import type { AdminProjectDetail, ApiToken, Stage } from "../../api/types.ts";
+import type { AdminProjectDetail, ApiToken, DiscordChannelList, Stage } from "../../api/types.ts";
 import { admin, adminProjectDetail, adminProjects, membersOverview, projects } from "../../test/fixtures.ts";
 import { fakeApi, renderRoutes, reply } from "../../test/render.tsx";
 
@@ -55,7 +55,7 @@ function stageRoutes(initial: string[]) {
   return routes;
 }
 
-function setup(overrides: Record<string, unknown> = {}) {
+function setup(overrides: Record<string, unknown> = {}, route = "/admin/projects/app") {
   let detail: AdminProjectDetail = adminProjectDetail();
   let tokens: ApiToken[] = [
     apiToken(),
@@ -115,7 +115,7 @@ function setup(overrides: Record<string, unknown> = {}) {
     ...stageRoutes(["Backend", "Frontend", "QA"]),
     ...overrides,
   });
-  return { api, ...renderRoutes(<AppRoutes />, "/admin/projects/app"), user: userEvent.setup() };
+  return { api, ...renderRoutes(<AppRoutes />, route), user: userEvent.setup() };
 }
 
 describe("Project settings", () => {
@@ -598,5 +598,169 @@ describe("Project settings", () => {
       expect(api.calls.map((c) => c.route)).toContain("DELETE /api/admin/projects/app/tokens/1");
       await waitFor(() => expect(within(region).queryByRole("button", { name: "Revoke VPS agent" })).not.toBeInTheDocument());
     });
+  });
+});
+
+describe("Project settings: Discord", () => {
+  const GUILD = "111111111111111111";
+  const GENERAL = "333333333333333333";
+  const NEWS = "444444444444444444";
+  const DEV = "555555555555555555";
+  const enabled = { "GET /auth/me": { ...admin, discordBotInstallEnabled: true } };
+  const channels: DiscordChannelList = {
+    guildId: GUILD,
+    channels: [
+      { id: GENERAL, name: "general", type: 0, usedBy: null },
+      { id: NEWS, name: "news", type: 5, usedBy: { slug: "landing", name: "Acme Landing" } },
+      { id: DEV, name: "dev", type: 0, usedBy: null },
+    ],
+  };
+  const connected = (overrides: Partial<AdminProjectDetail> = {}) => ({
+    ...enabled,
+    "GET /api/admin/projects/app": () => adminProjectDetail({ discordGuildId: GUILD, discordChannelId: GENERAL, ...overrides }),
+    "GET /api/admin/projects/app/discord/channels": channels,
+  });
+
+  it("is hidden when the server cannot connect Discord", async () => {
+    setup();
+    await screen.findByRole("form", { name: "General" });
+    expect(screen.queryByRole("region", { name: "Discord" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Connect Discord" })).not.toBeInTheDocument();
+  });
+
+  it("offers Connect Discord until a server is connected", async () => {
+    const { api } = setup(enabled);
+    const section = await screen.findByRole("region", { name: "Discord" });
+    expect(await within(section).findByRole("link", { name: "Connect Discord" })).toHaveAttribute(
+      "href",
+      "/api/admin/projects/app/discord/connect",
+    );
+    expect(within(section).queryByRole("combobox")).not.toBeInTheDocument();
+    expect(api.calls.map((c) => c.route)).not.toContain("GET /api/admin/projects/app/discord/channels");
+  });
+
+  it("lists the server's channels, disabling those of other projects", async () => {
+    setup(connected());
+    const section = await screen.findByRole("region", { name: "Discord" });
+    const select = await within(section).findByRole("combobox", { name: "Channel" });
+    await waitFor(() => expect(select).toHaveValue(GENERAL));
+    expect(within(select).getByRole("option", { name: "#general" })).toBeEnabled();
+    expect(within(select).getByRole("option", { name: "#news — used by Acme Landing" })).toBeDisabled();
+    expect(within(section).getByRole("link", { name: "Connect another server" })).toHaveAttribute(
+      "href",
+      "/api/admin/projects/app/discord/connect",
+    );
+  });
+
+  it("saves the picked channel", async () => {
+    const { api, user } = setup({
+      ...connected(),
+      "POST /api/admin/projects/app/discord/channel": ({ body }: { body: unknown }) => ({
+        project: adminProjectDetail({ discordGuildId: GUILD, discordChannelId: (body as { channelId: string }).channelId }),
+        warnings: [],
+      }),
+    });
+    const section = await screen.findByRole("region", { name: "Discord" });
+    const select = await within(section).findByRole("combobox", { name: "Channel" });
+    await waitFor(() => expect(select).toHaveValue(GENERAL));
+    await user.selectOptions(select, DEV);
+    await user.click(within(section).getByRole("button", { name: "Save channel" }));
+
+    await waitFor(() =>
+      expect(api.calls).toContainEqual({ route: "POST /api/admin/projects/app/discord/channel", body: { channelId: DEV } }),
+    );
+    expect(await within(section).findByText("Saved.")).toBeInTheDocument();
+  });
+
+  it("updates the untouched manual fields after a channel is picked, so saving General keeps it", async () => {
+    let detail = adminProjectDetail({ discordGuildId: GUILD, discordChannelId: GENERAL });
+    const { api, user } = setup({
+      ...connected(),
+      "GET /api/admin/projects/app": () => detail,
+      "POST /api/admin/projects/app/discord/channel": () => {
+        detail = { ...detail, discordChannelId: DEV, discordInviteUrl: "https://discord.gg/dev" };
+        return { project: detail, warnings: [] };
+      },
+    });
+    const section = await screen.findByRole("region", { name: "Discord" });
+    const select = await within(section).findByRole("combobox", { name: "Channel" });
+    await waitFor(() => expect(select).toHaveValue(GENERAL));
+    await user.selectOptions(select, DEV);
+    await user.click(within(section).getByRole("button", { name: "Save channel" }));
+
+    const form = screen.getByRole("form", { name: "General" });
+    await waitFor(() => expect(within(form).getByRole("textbox", { name: "Discord channel ID" })).toHaveValue(DEV));
+    expect(within(form).getByRole("textbox", { name: "Discord server invite" })).toHaveValue("https://discord.gg/dev");
+    await user.click(within(form).getByRole("button", { name: "Save changes" }));
+    expect(await within(form).findByText("Nothing to save.")).toBeInTheDocument();
+    expect(api.calls.map((c) => c.route)).not.toContain("PATCH /api/admin/projects/app");
+  });
+
+  it("shows the non-blocking warnings of a saved channel", async () => {
+    const { user } = setup({
+      ...connected(),
+      "POST /api/admin/projects/app/discord/channel": {
+        project: adminProjectDetail({ discordGuildId: GUILD, discordChannelId: DEV }),
+        warnings: ["commands_not_registered", "invite_not_created"],
+      },
+    });
+    const section = await screen.findByRole("region", { name: "Discord" });
+    const select = await within(section).findByRole("combobox", { name: "Channel" });
+    await waitFor(() => expect(select).toHaveValue(GENERAL));
+    await user.selectOptions(select, DEV);
+    await user.click(within(section).getByRole("button", { name: "Save channel" }));
+
+    const warning = await within(section).findByText(/slash commands couldn’t be registered/);
+    expect(warning).toBeInTheDocument();
+    expect(within(section).getByText(/couldn’t create an invite/)).toBeInTheDocument();
+  });
+
+  it("explains a refused channel", async () => {
+    const { user } = setup({
+      ...connected(),
+      "POST /api/admin/projects/app/discord/channel": reply(409, { error: "discord_channel_taken" }),
+    });
+    const section = await screen.findByRole("region", { name: "Discord" });
+    const select = await within(section).findByRole("combobox", { name: "Channel" });
+    await waitFor(() => expect(select).toHaveValue(GENERAL));
+    await user.selectOptions(select, DEV);
+    await user.click(within(section).getByRole("button", { name: "Save channel" }));
+    expect(await within(section).findByRole("alert")).toHaveTextContent("Another project already posts to that channel.");
+  });
+
+  it("explains when the channels cannot be loaded", async () => {
+    setup({ ...connected(), "GET /api/admin/projects/app/discord/channels": reply(502, { error: "discord_unavailable" }) });
+    const section = await screen.findByRole("region", { name: "Discord" });
+    // Server failures are retried twice before the error shows.
+    expect(await within(section).findByRole("alert", {}, { timeout: 5_000 })).toHaveTextContent(
+      "Can’t reach Discord right now.",
+    );
+  }, 10_000);
+
+  it.each([
+    ["connected", "Discord server connected. Pick the channel for updates."],
+    ["cancelled", "Discord connection cancelled."],
+  ])("announces the %s outcome of the connection and cleans the URL", async (outcome, text) => {
+    setup(connected(), `/admin/projects/app?discordBot=${outcome}`);
+    const section = await screen.findByRole("region", { name: "Discord" });
+    expect(await within(section).findByText(text)).toBeInTheDocument();
+    await waitFor(() => expect(location()).toBe("/admin/projects/app"));
+  });
+
+  it("announces a failed connection as an error", async () => {
+    setup(enabled, "/admin/projects/app?discordBot=failed");
+    const section = await screen.findByRole("region", { name: "Discord" });
+    expect(await within(section).findByRole("alert")).toHaveTextContent("Couldn’t connect Discord. Try again.");
+  });
+
+  it("keeps the manual Discord fields under a collapsed Advanced section", async () => {
+    const { user } = setup(enabled);
+    const form = await screen.findByRole("form", { name: "General" });
+    const advanced = within(form).getByText("Advanced: set Discord manually").closest("details")!;
+    expect(advanced).not.toHaveAttribute("open");
+    await user.click(within(form).getByText("Advanced: set Discord manually"));
+    expect(advanced).toHaveAttribute("open");
+    expect(within(advanced).getByRole("textbox", { name: "Discord channel ID" })).toBeInTheDocument();
+    expect(within(advanced).getByRole("textbox", { name: "Discord server invite" })).toBeInTheDocument();
   });
 });

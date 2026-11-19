@@ -606,3 +606,38 @@
   border-radius: var(--radius-sm);
   padding: 8px 12px;
 }
+
+/* Discord: channel picker and the collapsed manual settings */
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.channelField {
+  max-width: 420px;
+}
+
+.advanced {
+  border-top: 1px solid var(--color-line);
+  padding-top: 12px;
+}
+
+.advanced > summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-muted);
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+}
+
+.advanced > summary:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.advanced[open] > summary {
+  margin-bottom: 12px;
+}

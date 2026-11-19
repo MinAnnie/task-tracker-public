@@ -20,6 +20,8 @@ export interface CurrentUser {
   discord: DiscordAccount | null;
   /** Whether the server is configured to link Discord accounts. */
   discordLinkingEnabled: boolean;
+  /** Whether admins can connect projects to a Discord server ("Connect Discord"). */
+  discordBotInstallEnabled: boolean;
 }
 
 export interface DiscordAccount {
@@ -153,6 +155,8 @@ export interface AdminProject {
   taskKeyPrefix: string;
   discordChannelId: string | null;
   discordInviteUrl: string | null;
+  /** Discord server connected with "Connect Discord", if any. */
+  discordGuildId: string | null;
   /** ISO timestamp. */
   createdAt: string;
 }
@@ -190,6 +194,28 @@ export interface NewProjectInput {
 }
 
 export type ProjectChanges = Partial<NewProjectInput>;
+
+/** A text (0) or announcement (5) channel of the project's connected Discord server. */
+export interface DiscordChannelOption {
+  id: string;
+  name: string;
+  type: number;
+  /** Another project already posting to this channel, if any. */
+  usedBy: { slug: string; name: string } | null;
+}
+
+export interface DiscordChannelList {
+  guildId: string;
+  channels: DiscordChannelOption[];
+}
+
+/** Follow-ups of a channel selection that failed without undoing it. */
+export type DiscordChannelWarning = "commands_not_registered" | "invite_not_created";
+
+export interface SelectedDiscordChannel {
+  project: AdminProject;
+  warnings: DiscordChannelWarning[];
+}
 
 export type ApiTokenStatus = "active" | "expired" | "revoked";
 /** `write` tokens may also create and edit tasks and their dependencies. */

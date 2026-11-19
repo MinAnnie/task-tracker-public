@@ -1,4 +1,5 @@
 import { useRef, useState, type FormEvent } from "react";
+import { flushSync } from "react-dom";
 import type { AdminProject, ProjectChanges } from "../../api/types.ts";
 import { Alert } from "../../ui/Alert.tsx";
 import buttons from "../../ui/Button.module.css";
@@ -46,8 +47,24 @@ function changesFrom(project: AdminProject, values: ProjectValues): ProjectChang
   return changes;
 }
 
+const DISCORD_FIELDS: (keyof ProjectValues)[] = ["discordChannelId", "discordInviteUrl"];
+
 export function GeneralForm({ project, onSave, saving, error, onDraftChange }: GeneralFormProps) {
   const [values, setValues] = useState<ProjectValues>(() => valuesOf(project));
+  const [shown, setShown] = useState(project);
+  // The project can change outside this form (e.g. picking a Discord channel fills the
+  // channel and invite): fields left untouched follow it, edited ones keep the draft.
+  if (shown !== project) {
+    const before = valuesOf(shown);
+    const after = valuesOf(project);
+    setShown(project);
+    setValues((current) => {
+      const next = { ...current };
+      for (const field of FIELD_ORDER) if (current[field] === before[field]) next[field] = after[field];
+      return next;
+    });
+  }
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [clientErrors, setErrors] = useState<ProjectErrors>({});
   const errors = fieldErrors(clientErrors, error);
   const [notice, setNotice] = useState<string>();
@@ -73,6 +90,8 @@ export function GeneralForm({ project, onSave, saving, error, onDraftChange }: G
     setErrors(found);
     const firstInvalid = FIELD_ORDER.find((field) => found[field]);
     if (firstInvalid) {
+      // A collapsed field cannot take focus: open the manual Discord settings first.
+      if (DISCORD_FIELDS.includes(firstInvalid)) flushSync(() => setAdvancedOpen(true));
       refs[firstInvalid].current?.focus();
       return;
     }
@@ -120,31 +139,40 @@ export function GeneralForm({ project, onSave, saving, error, onDraftChange }: G
           autoCapitalize="characters"
           spellCheck={false}
         />
-        <TextField
-          label="Discord channel ID"
-          mono
-          inputMode="numeric"
-          value={values.discordChannelId}
-          onChange={set("discordChannelId")}
-          help="Where the bot posts updates. In Discord: right-click the channel › Copy Channel ID. Leave it empty for none."
-          error={errors.discordChannelId}
-          inputRef={refs.discordChannelId}
-        />
-        <TextField
-          label="Discord server invite"
-          mono
-          type="url"
-          inputMode="url"
-          value={values.discordInviteUrl}
-          onChange={set("discordInviteUrl")}
-          placeholder="https://discord.gg/abc123"
-          help="Shown on the board as a Discord button. In Discord: Invite People › copy a link that never expires. Leave it empty for none."
-          error={errors.discordInviteUrl}
-          inputRef={refs.discordInviteUrl}
-          autoCapitalize="off"
-          spellCheck={false}
-        />
       </div>
+      <details
+        className={styles.advanced}
+        open={advancedOpen || DISCORD_FIELDS.some((field) => errors[field])}
+        onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
+      >
+        <summary>Advanced: set Discord manually</summary>
+        <div className={styles.fieldGrid}>
+          <TextField
+            label="Discord channel ID"
+            mono
+            inputMode="numeric"
+            value={values.discordChannelId}
+            onChange={set("discordChannelId")}
+            help="Where the bot posts updates. In Discord: right-click the channel › Copy Channel ID. Leave it empty for none."
+            error={errors.discordChannelId}
+            inputRef={refs.discordChannelId}
+          />
+          <TextField
+            label="Discord server invite"
+            mono
+            type="url"
+            inputMode="url"
+            value={values.discordInviteUrl}
+            onChange={set("discordInviteUrl")}
+            placeholder="https://discord.gg/abc123"
+            help="Shown on the board as a Discord button. In Discord: Invite People › copy a link that never expires. Leave it empty for none."
+            error={errors.discordInviteUrl}
+            inputRef={refs.discordInviteUrl}
+            autoCapitalize="off"
+            spellCheck={false}
+          />
+        </div>
+      </details>
       <div className={styles.formActions}>
         <button type="submit" className={`${buttons.button} ${buttons.primary}`} disabled={saving}>
           {saving ? "Saving…" : "Save changes"}

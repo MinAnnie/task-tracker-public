@@ -24,6 +24,7 @@ export const queryKeys = {
   adminProject: (slug: string) => ["admin", "projects", slug] as const,
   adminProjectTokens: (slug: string) => ["admin", "projects", slug, "tokens"] as const,
   adminProjectStages: (slug: string) => ["admin", "projects", slug, "stages"] as const,
+  adminProjectDiscordChannels: (slug: string) => ["admin", "projects", slug, "discord-channels"] as const,
   personalTokens: ["account", "tokens"] as const,
 };
 
@@ -175,6 +176,24 @@ export function useUpdateProject(slug: string) {
     mutationFn: (changes: ProjectChanges) => api.updateProject(slug, changes),
     onSuccess: (saved) =>
       Promise.all([invalidateLists(), queryClient.invalidateQueries({ queryKey: queryKeys.adminProject(saved.slug) })]),
+  });
+}
+
+/** The connected Discord server's channels; only fetched once a server is connected. */
+export const useDiscordChannels = (slug: string, { enabled }: { enabled: boolean }) =>
+  useQuery({
+    queryKey: queryKeys.adminProjectDiscordChannels(slug),
+    queryFn: () => api.fetchDiscordChannels(slug),
+    enabled,
+  });
+
+export function useSelectDiscordChannel(slug: string) {
+  const queryClient = useQueryClient();
+  const invalidateLists = useProjectListsInvalidation();
+  return useMutation({
+    mutationFn: (channelId: string) => api.selectDiscordChannel(slug, channelId),
+    onSuccess: () =>
+      Promise.all([invalidateLists(), queryClient.invalidateQueries({ queryKey: queryKeys.adminProject(slug) })]),
   });
 }
 
