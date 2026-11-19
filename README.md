@@ -38,7 +38,8 @@
 | 📝 **Markdown descriptions** | Descriptions render as GitHub-flavored Markdown (no raw HTML) and are edited with a toolbar, `Ctrl/Cmd+B`/`I` shortcuts and a Write/Preview toggle. |
 | 🤖 **Copy for AI** | Every task can be copied as a ready-made Markdown brief for your coding assistant. |
 | 🔑 **API tokens** | Project tokens (admins) and personal tokens (any user), each **Read only** or **Read & write**, for scripts and AI agents. |
-| 🧠 **MCP server** | An agent can ask "what should I work on next?" and, with a write token, create and update tasks. |
+| 🧠 **MCP server** | An agent can ask "what should I work on next?" and, with a write token, create and update tasks. Use the built-in remote endpoint at `/mcp` (nothing to install) or the local stdio server. |
+| 🤝 **Connect your AI** | A page in the account menu with this instance's MCP URL and copy-paste setup for Claude Code, Cursor, VS Code, Windsurf, Codex CLI and Gemini CLI. |
 
 ## 🔄 How it works
 
@@ -70,7 +71,7 @@ POSTGRES_PASSWORD=change-me docker compose -f docker-compose.yml -f docker-compo
 pnpm dev        # API on :3000 (runs migrations on startup), web on :5173
 ```
 
-Open http://localhost:5173. Vite proxies `/api`, `/auth` and `/health` to the server without rewriting the `Origin` header, so set `APP_BASE_URL=http://localhost:5173` in `.env` and use `http://localhost:5173/auth/github/callback` as the callback URL of your development GitHub OAuth app.
+Open http://localhost:5173. Vite proxies `/api`, `/auth`, `/health`, `/webhooks` and `/mcp` to the server without rewriting the `Origin` header, so set `APP_BASE_URL=http://localhost:5173` in `.env` and use `http://localhost:5173/auth/github/callback` as the callback URL of your development GitHub OAuth app.
 
 <details>
 <summary><b>More scripts</b></summary>
@@ -118,7 +119,7 @@ The repository ships a `Dockerfile` and a `docker-compose.yml` (app + Postgres).
 3. In **Domains**, add your domain targeting service `app`, port `3000`. Dokploy's Traefik handles routing and TLS; the compose file publishes no host ports.
 4. Deploy. Migrations run automatically on app startup; `GET /health` reports DB connectivity.
 
-Then point a GitHub webhook at `<APP_BASE_URL>/webhooks/github` ([details](docs/api.md#github-webhook)).
+Then point a GitHub webhook at `<APP_BASE_URL>/webhooks/github` ([details](docs/api.md#github-webhook)). The remote MCP endpoint (`<APP_BASE_URL>/mcp`) needs nothing extra ([details](docs/mcp.md#the-remote-endpoint)).
 
 ### Connecting Discord (optional)
 
@@ -137,8 +138,8 @@ Step by step, with every message and command: [docs/discord.md](docs/discord.md)
 apps/
 ├── server/   Hono API (Node 24, TypeScript), Drizzle ORM + PostgreSQL. Pure domain logic in src/domain/
 ├── web/      React + Vite SPA (React Router, TanStack Query, CSS Modules), served by the server in production
-└── mcp/      Read-only MCP server (stdio) over the API-token endpoints
-docs/         API, Discord and import reference
+└── mcp/      MCP tools over a small client port, plus the stdio server; apps/server serves the same tools at /mcp
+docs/         API, Discord, MCP and import reference
 ```
 
 The server follows a ports-and-adapters design: use cases in `src/application/` depend on interfaces, with Postgres, GitHub and Discord adapters in `src/infrastructure/` and in-memory fakes for tests. The web app splits screens into containers (data) and presentational components (props) under `src/features/`.
@@ -148,7 +149,8 @@ The server follows a ports-and-adapters design: use cases in `src/application/` 
 - [HTTP API](docs/api.md): roles, admin, projects, stages and tasks endpoints, the GitHub webhook and API tokens (scopes, personal tokens)
 - [Discord](docs/discord.md): notifications, Connect Discord, account linking, slash commands and the startup command sync
 - [Bulk import CLI](docs/import.md): the JSON format and how to run `import-tasks` locally or in production
-- [MCP server](apps/mcp/README.md): build, configuration and Claude Code registration
+- [MCP](docs/mcp.md): the tools, the remote `/mcp` endpoint and the Connect your AI page
+- [Local MCP server](apps/mcp/README.md): build, configuration (`TRACKER_API_URL` is required) and Claude Code registration
 
 ## 📄 License
 

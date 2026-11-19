@@ -1,6 +1,21 @@
 # Task Tracker MCP server
 
-A [Model Context Protocol](https://modelcontextprotocol.io) server over stdio. It lets AI agents read Task Tracker projects through an API token and, with a **Read & write** token, create and edit their tasks and dependencies.
+A [Model Context Protocol](https://modelcontextprotocol.io) server. It lets AI agents read Task Tracker projects through an API token and, with a **Read & write** token, create and edit their tasks and dependencies.
+
+## Remote or local?
+
+The same tools, with the same descriptions, schemas and output, are available two ways:
+
+- **Remote, nothing to install (recommended)**: the Task Tracker server itself serves them at `<APP_BASE_URL>/mcp` (for example `https://your-tracker.example.com/mcp`) over MCP Streamable HTTP. Give your client that URL and the header `Authorization: Bearer <token>`. In the web app, account menu → **Connect your AI** has copy-paste setup per client. For Claude Code:
+
+  ```sh
+  claude mcp add --transport http --scope user task-tracker https://your-tracker.example.com/mcp --header "Authorization: Bearer <YOUR_TOKEN>"
+  ```
+
+  It runs the server's use cases in-process as the token, so the access rules below are enforced exactly as on the REST API. It is stateless (`POST` only; `GET`/`DELETE` answer `405`), answers `401` with `WWW-Authenticate: Bearer` without a valid token, caps bodies at 256 KB and batches at 10 messages, and shares the token's rate limit (120 requests per minute; each message counts). `TRACKER_PROJECT` does not exist there: pass `project` when a personal token sees several projects.
+- **Local, over stdio**: this package's `dist/index.js`, which calls the REST API with `TRACKER_API_TOKEN`. The rest of this page is about it. It keeps working as before.
+
+The tools are defined once, in `src/server.ts` (`createTrackerMcpServer`), over the `TrackerClient` port (`src/client.ts`). The stdio entry gives it the HTTP client; `apps/server` imports the package (`@task-tracker/mcp`, entry `src/lib.ts`) and gives it an in-process client. `apiError` maps an API failure (status, code) to the tool's message for both, so errors read the same.
 
 ## Personal or project token?
 
@@ -94,7 +109,7 @@ Assumed (not tested here):
 ## Tests
 
 ```sh
-pnpm --filter @task-tracker/mcp test        # unit tests (client, filters, formatters, tools, protocol)
+pnpm --filter @task-tracker/mcp test        # unit tests (client, filters, formatters, tools, protocol, library entry)
 ```
 
 End-to-end smoke test, which is not part of `pnpm test`. It starts `dist/index.js` over stdio with the SDK client, checks that `tools/list` has all eight tools, and calls `list_projects`, `list_tasks`, `next_tasks` and `get_task` against a running API. It never calls a write tool:
@@ -103,3 +118,11 @@ End-to-end smoke test, which is not part of `pnpm test`. It starts `dist/index.j
 pnpm --filter @task-tracker/mcp build
 TRACKER_API_URL=http://localhost:3002 TRACKER_API_TOKEN=... pnpm --filter @task-tracker/mcp smoke
 ```
+
+Add `--remote` to make the same calls to the server's remote endpoint (`$TRACKER_API_URL/mcp`) over Streamable HTTP instead; nothing is spawned. Both modes print the same tool output for the same token.
+
+```sh
+TRACKER_API_URL=http://localhost:3002 TRACKER_API_TOKEN=... pnpm --filter @task-tracker/mcp smoke --remote
+```
+
+The server's tests also drive `/mcp` with the SDK's Streamable HTTP client (`apps/server/src/mcp/mcp-endpoint.test.ts`): the tool list matches this server's, a read-only token cannot use the write tools, and a project token sees only its project.

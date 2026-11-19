@@ -81,7 +81,7 @@ Every other endpoint, a write with a read token, and `assigneeLogin` from a toke
 ### Using a token
 
 - **OpenAPI**: `GET /api/openapi.json` (public) describes the token endpoints; write operations list the `write` scope.
-- **MCP**: the same tokens, with the same access, work with the [MCP server](../apps/mcp/README.md).
+- **MCP**: the same tokens, with the same access, work with the remote MCP endpoint (`/mcp`) and the local MCP server; see [MCP](mcp.md).
 
 Keep the token in an environment variable, never in code or logs:
 
