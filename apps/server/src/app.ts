@@ -60,7 +60,6 @@ import type {
   ReleaseTaskResult,
   RemoveTaskDependencyResult,
   TakeTaskResult,
-  TaskField,
   TaskViewer,
   UpdateTaskResult,
 } from "./application/tasks.ts";
@@ -71,6 +70,7 @@ import type {
 import type { RateLimitDecision } from "./infrastructure/in-memory-rate-limiter.ts";
 import { normalizeProjectSlug } from "./domain/index.ts";
 import { openApiDocument } from "./openapi.ts";
+import { taskFailureResponse, type TaskFailure } from "./task-failure.ts";
 import { parsePullRequestPayload } from "./webhooks/github/parse-pull-request-payload.ts";
 import { verifyGithubSignature } from "./webhooks/github/verify-signature.ts";
 import type { DiscordInteractionResponse } from "./webhooks/discord/handle-interaction.ts";
@@ -201,22 +201,6 @@ export interface AppDeps {
   deleteStage: (slug: string, stageId: string) => Promise<DeleteStageResult>;
 }
 
-/** Every unsuccessful outcome of a task use case. */
-type TaskFailure = Exclude<
-  | ListTasksResult
-  | ListParticipantsResult
-  | ListProjectStagesResult
-  | GetTaskResult
-  | CreateTaskResult
-  | TakeTaskResult
-  | ReleaseTaskResult
-  | UpdateTaskResult
-  | AddTaskDependencyResult
-  | RemoveTaskDependencyResult
-  | DeleteTaskResult,
-  { status: "ok" | "created" | "removed" | "deleted" }
->;
-
 /** Who reads a token-readable route: the signed-in user or an API token. */
 type Viewer = AuthenticatedUser | ApiTokenCaller;
 
@@ -262,48 +246,10 @@ const INVALID_STAGE_FIELD_ERRORS: Record<StageField, string> = {
   position: "invalid_stage_position",
 };
 
-const INVALID_TASK_FIELD_ERRORS: Record<TaskField, string> = {
-  body: "invalid_body",
-  title: "invalid_task_title",
-  description: "invalid_task_description",
-  priority: "invalid_task_priority",
-  stage: "invalid_task_stage",
-  status: "invalid_task_status",
-  dependsOnKey: "invalid_task_key",
-  dependsOnKeys: "invalid_dependency",
-};
-
-const TASK_FAILURE_STATUS = {
-  project_not_found: 404,
-  task_not_found: 404,
-  dependency_not_found: 404,
-  forbidden: 403,
-  invalid_assignee: 400,
-  invalid_stage: 400,
-  empty_update: 400,
-  self_dependency: 400,
-  task_taken: 409,
-  task_done: 409,
-  task_not_assigned: 409,
-  dependency_exists: 409,
-  dependency_cycle: 409,
-} as const satisfies Record<
-  Exclude<TaskFailure["status"], "invalid" | "dependencies_pending" | "invalid_dependency">,
-  number
->;
-
 /** Renders a failed task use case as its error response. */
 function taskFailure(c: Context, failure: TaskFailure) {
-  switch (failure.status) {
-    case "invalid":
-      return c.json({ error: INVALID_TASK_FIELD_ERRORS[failure.field] }, 400);
-    case "dependencies_pending":
-      return c.json({ error: failure.status, pendingDependencies: failure.pendingDependencies }, 409);
-    case "invalid_dependency":
-      return c.json({ error: failure.status, unknownKeys: failure.unknownKeys }, 400);
-    default:
-      return c.json({ error: failure.status }, TASK_FAILURE_STATUS[failure.status]);
-  }
+  const { status, body } = taskFailureResponse(failure);
+  return c.json(body, status);
 }
 
 const GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize";
