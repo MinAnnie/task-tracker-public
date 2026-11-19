@@ -2,12 +2,16 @@
  * End-to-end smoke test (not part of `pnpm test`): starts the built server (dist/index.js)
  * over stdio with the SDK client and calls tools/list, list_tasks, next_tasks and get_task
  * against a running Task Tracker API. It never calls the write tools, so any token works.
+ * With `--remote` it makes the same calls to the server's remote endpoint
+ * (`$TRACKER_API_URL/mcp`, Streamable HTTP) instead, with nothing spawned.
  *
  *   pnpm --filter @task-tracker/mcp build
  *   TRACKER_API_URL=http://localhost:3001 TRACKER_API_TOKEN=... pnpm --filter @task-tracker/mcp smoke
+ *   TRACKER_API_URL=http://localhost:3001 TRACKER_API_TOKEN=... pnpm --filter @task-tracker/mcp smoke --remote
  */
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { getDefaultEnvironment, StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { fileURLToPath } from "node:url";
 
 const serverPath = fileURLToPath(new URL("../dist/index.js", import.meta.url));
@@ -26,7 +30,14 @@ type TextResult = { isError?: boolean; content: { type: string; text?: string }[
 const textOf = (result: unknown) =>
   (result as TextResult).content.map((c) => (c.type === "text" ? (c.text ?? "") : "")).join("");
 
-const transport = new StdioClientTransport({ command: process.execPath, args: [serverPath], env, stderr: "inherit" });
+const remote = process.argv.includes("--remote");
+const apiUrl = env.TRACKER_API_URL.replace(/\/+$/, "");
+const transport = remote
+  ? new StreamableHTTPClientTransport(new URL(`${apiUrl}/mcp`), {
+      requestInit: { headers: { authorization: `Bearer ${env.TRACKER_API_TOKEN}` } },
+    })
+  : new StdioClientTransport({ command: process.execPath, args: [serverPath], env, stderr: "inherit" });
+console.log(remote ? `remote endpoint: ${apiUrl}/mcp` : `stdio server: ${serverPath}`);
 const client = new Client({ name: "task-tracker-mcp-smoke", version: "1.0.0" });
 let failed = false;
 
